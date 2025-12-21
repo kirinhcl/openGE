@@ -1,0 +1,48 @@
+# Wheat Crop Configuration (2025)
+# Crop-specific parameters for wheat trait prediction
+
+crop: "wheat"
+year: 2025
+
+# Data paths (to be updated with actual wheat data)
+data:
+  genetic_file: "path/to/wheat_genotypes.vcf"
+  environment_files:
+    weather: "path/to/wheat_weather.csv"
+    soil: "path/to/wheat_soil.csv"
+  phenotype_file: "path/to/wheat_phenotypes.csv"
+
+# Traits to predict
+traits:
+  - name: "Grain_Yield"
+    type: "continuous"
+  - name: "Protein_Content"
+    type: "continuous"
+  - name: "Disease_Resistance"
+    type: "categorical"
+
+# Model configuration for wheat
+model:
+  name: "gxe_model"
+  genetic_encoder:
+    name: "transformer"
+    input_dim: 30000  # Wheat SNP count
+    hidden_dim: 256
+    n_layers: 3
+  
+  env_encoder:
+    name: "mlp"
+    input_dim: 28
+    hidden_dims: [128, 64]
+  
+  fusion:
+    name: "gating"
+
+training:
+  batch_size: 24
+  epochs: 120
+  learning_rate: 0.0008
+
+preprocessing:
+  seasonal_aggregation: ["spring", "summer"]
+  temperature_threshold: 15.0  # Wheat-specific growing temp

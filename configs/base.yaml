@@ -1,0 +1,60 @@
+# OpenGE Configuration Template
+# Base configuration shared across crops
+
+# Model Architecture
+model:
+  name: "gxe_model"
+  genetic_encoder:
+    name: "transformer"
+    input_dim: 50000  # SNP marker count
+    hidden_dim: 256
+    n_layers: 2
+    n_heads: 8
+  
+  env_encoder:
+    name: "mlp"
+    input_dim: 32  # Weather + Soil + EC features
+    hidden_dims: [128, 64]
+    output_dim: 64
+  
+  fusion:
+    name: "attention"
+    hidden_dim: 256
+  
+  head:
+    name: "regression"
+    output_dim: 1  # Single trait or multiple
+
+# Training Configuration
+training:
+  batch_size: 32
+  epochs: 100
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 10
+  device: "cuda"  # or "cpu"
+
+# Data Configuration
+data:
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  normalize: true
+  imputation_strategy: "mean"
+
+# Interpretability
+interpretability:
+  enable_attention_analysis: true
+  enable_feature_importance: true
+  enable_shap: false
+  save_attention_weights: true
+  sparsity_analysis:
+    enabled: false
+    target_sparsity: 0.8
+
+# Logging
+logging:
+  level: "INFO"
+  save_dir: "./results"
+  save_checkpoint: true
+  checkpoint_interval: 10

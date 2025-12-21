@@ -1,0 +1,49 @@
+# Maize Crop Configuration (2024)
+# Crop-specific parameters for maize trait prediction
+
+crop: "maize"
+year: 2024
+
+# Data paths
+data:
+  genetic_file: "Training_data/5_Genotype_Data_All_2014_2025_Hybrids_numerical.txt"
+  environment_files:
+    weather: "Training_data/4_Training_Weather_Data_2014_2023_full_year.csv"
+    soil: "Training_data/3_Training_Soil_Data_2015_2023.csv"
+    ec: "Training_data/6_Training_EC_Data_2014_2023.csv"
+  phenotype_file: "Training_data/1_Training_Trait_Data_2014_2023.csv"
+  meta_file: "Training_data/2_Training_Meta_Data_2014_2023.csv"
+
+# Traits to predict
+traits:
+  - name: "Grain_Yield"
+    type: "continuous"
+    unit: "kg/ha"
+
+# Model specific for maize
+model:
+  name: "gxe_model"
+  genetic_encoder:
+    name: "transformer"
+    input_dim: 40000  # Maize SNP count
+    hidden_dim: 256
+    n_layers: 2
+  
+  env_encoder:
+    name: "mlp"
+    input_dim: 30
+    hidden_dims: [128, 64]
+  
+  fusion:
+    name: "attention"
+
+training:
+  batch_size: 16
+  epochs: 100
+  learning_rate: 0.001
+
+# Maize-specific preprocessing
+preprocessing:
+  missing_value_threshold: 0.2
+  outlier_removal: true
+  seasonal_aggregation: ["spring", "summer", "fall"]
