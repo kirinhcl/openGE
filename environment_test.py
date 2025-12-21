@@ -21,7 +21,7 @@ from datetime import datetime
 # ✅ 【修改】导入 EnvironmentLoader 类
 # 方式1：如果 environment.py 在 openge/data/loaders/ 目录
 sys.path.insert(0, str(Path(__file__).parent / 'openge'))
-from openge.data.loaders.environment import EnvironmentLoader
+from openge.data import EnvironmentLoader
 
 
 def test_environment_loader():

@@ -14,7 +14,7 @@ import torch
 import numpy as np
 
 from openge.core import Config
-from openge.data import CropDataset
+from openge.data import GxEDataLoader
 from openge.utils import calculate_rmse, calculate_r2, calculate_mae
 from openge.utils import plot_predictions
 

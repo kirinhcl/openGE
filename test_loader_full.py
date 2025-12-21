@@ -3,7 +3,7 @@
 import sys
 sys.path.insert(0, '/Users/lu/openGE')
 
-from openge.data.dataloaders import GxEDataLoader, GxEDataset
+from openge.data import GxEDataLoader, GxEDataset
 import numpy as np
 import matplotlib.pyplot as plt
 

@@ -1,6 +1,12 @@
 """Data loading and preprocessing module."""
 
-from .dataset import CropDataset
+# Dataset classes
+from .dataloaders import GxEDataset, GxEDataLoader
+
+# Individual loaders
+from .loaders import GeneticLoader, EnvironmentLoader, PhenotypeLoader
+
+# Preprocessing utilities
 from .preprocess import (
     Preprocessor,
     check_and_handle_missing,
@@ -13,7 +19,14 @@ from .preprocess import (
 )
 
 __all__ = [
-    "CropDataset", 
+    # Dataset classes
+    "GxEDataset",
+    "GxEDataLoader",
+    # Individual loaders
+    "GeneticLoader",
+    "EnvironmentLoader", 
+    "PhenotypeLoader",
+    # Preprocessing
     "Preprocessor",
     "check_and_handle_missing",
     "aggregate_temporal_to_static",

@@ -14,7 +14,7 @@ import torch
 import numpy as np
 
 from openge.core import Config
-from openge.data import CropDataset
+from openge.data import GxEDataLoader
 from openge.interpretability import (
     AttentionAnalyzer,
     FeatureImportance,

@@ -3,7 +3,7 @@
 import sys
 sys.path.insert(0, '/Users/lu/openGE')
 
-from openge.data.dataloaders import GxEDataLoader
+from openge.data import GxEDataLoader
 import numpy as np
 import pandas as pd
 

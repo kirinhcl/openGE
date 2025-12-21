@@ -7,7 +7,7 @@ import seaborn as sns
 from datetime import datetime
 import sys
 sys.path.insert(0, '/Users/lu/openGE')
-from openge.data.loaders.phenotype import PhenotypeLoader
+from openge.data import PhenotypeLoader
 
 
 def test_phenotype_loader():

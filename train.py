@@ -15,7 +15,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from openge.core import Config, Trainer
-from openge.data import CropDataset, Preprocessor
+from openge.data import GxEDataLoader, Preprocessor
 from openge.models import (
     TransformerEncoder, MLPEncoder,
     AttentionFusion, RegressionHead,

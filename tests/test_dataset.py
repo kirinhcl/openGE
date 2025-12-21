@@ -2,7 +2,7 @@
 
 import unittest
 import numpy as np
-from openge.data import CropDataset, Preprocessor
+from openge.data import GxEDataLoader, Preprocessor
 from openge.data.loaders import GeneticLoader, EnvironmentLoader, PhenotypeLoader
 
 

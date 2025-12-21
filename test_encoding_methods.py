@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 sys.path.insert(0, '/Users/lu/openGE')
-from openge.data.loaders.genetic import GeneticLoader
+from openge.data import GeneticLoader
 
 def test_encoding_methods():
     """测试所有编码方法"""

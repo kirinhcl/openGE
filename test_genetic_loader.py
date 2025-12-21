@@ -7,7 +7,7 @@ from datetime import datetime
 
 # 直接导入genetic模块，避免torch依赖
 sys.path.insert(0, '/Users/lu/openGE')
-from openge.data.loaders.genetic import GeneticLoader
+from openge.data import GeneticLoader
 
 def test_genetic_loader():
     """测试基因型数据加载"""
