@@ -2,8 +2,17 @@
 
 import numpy as np
 import pandas as pd
-from typing import Union, Tuple, Optional, List, Dict
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from typing import Union, Tuple, Dict
+
+# sklearn 是可选依赖
+try:
+    from sklearn.preprocessing import StandardScaler, MinMaxScaler
+    HAS_SKLEARN = True
+except ImportError:
+    HAS_SKLEARN = False
+    StandardScaler = None
+    MinMaxScaler = None
+
 
 
 # 作物生育期定义
@@ -41,6 +50,8 @@ class Preprocessor:
         Args:
             method: Normalization method ('standard' or 'minmax')
         """
+        if not HAS_SKLEARN:
+            raise ImportError("需要安装 scikit-learn: pip install scikit-learn")
         self.method = method
         self.scaler = StandardScaler() if method == "standard" else MinMaxScaler()
         self.is_fitted = False
@@ -210,12 +221,12 @@ def check_and_handle_missing(df: pd.DataFrame,
         print(f"\n   🗑️ 删除有缺失值的行：{n_before - n_after} 行被删除")
         
     elif method == 'forward_fill':
-        df = df.fillna(method='ffill')
-        print(f"   ✓ 使用向前填充处理缺失值")
+        df = df.ffill()
+        print("   ✓ 使用向前填充处理缺失值")
         
     elif method == 'backward_fill':
-        df = df.fillna(method='bfill')
-        print(f"   ✓ 使用向后填充处理缺失值")
+        df = df.bfill()
+        print("   ✓ 使用向后填充处理缺失值")
         
     elif method == 'mean':
         numeric_cols = df.select_dtypes(include=[np.number]).columns
