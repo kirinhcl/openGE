@@ -145,6 +145,10 @@ class GxEDataLoader:
         self.genetic_marker_names = None
         self.environment_feature_names = None
         self.phenotype_trait_names = None
+        
+        # Static environment data (soil, EC) when combined with 3D weather
+        self.static_environment_data = None
+        self.static_environment_features = None
     
     def load_genetic(self, 
                     filepath: str,
@@ -195,41 +199,239 @@ class GxEDataLoader:
         return genotypes, sample_ids, marker_names
     
     def load_environment(self,
-                        weather_file: str,
+                        weather_file: Optional[str] = None,
                         soil_file: Optional[str] = None,
                         ec_file: Optional[str] = None,
                         use_3d: bool = True,
-                        handle_missing: str = 'drop') -> Tuple[np.ndarray, List[str], List[str]]:
+                        handle_missing: str = 'drop',
+                        combine_method: str = 'concat') -> Tuple[np.ndarray, List[str], List[str]]:
         """
-        Load environmental data.
+        Load environmental data from multiple sources.
         
         Args:
-            weather_file: Path to weather data CSV
+            weather_file: Path to weather data CSV (optional)
             soil_file: Path to soil data CSV (optional)
-            ec_file: Path to EC data CSV (optional)
-            use_3d: If True, load as 3D temporal data; if False, aggregate to static
-            handle_missing: How to handle missing values
+            ec_file: Path to EC (environmental covariate) data CSV (optional)
+            use_3d: If True, load weather as 3D temporal data; if False, aggregate to static
+            handle_missing: How to handle missing values ('drop', 'mean', 'zero')
+            combine_method: How to combine multiple data sources ('concat', 'separate')
             
         Returns:
             tuple: (environment_matrix, sample_ids, feature_names)
+            
+        Notes:
+            - At least one of weather_file, soil_file, or ec_file must be provided
+            - Weather data can be 3D (n_samples, n_timesteps, n_features) or 2D
+            - Soil and EC data are always 2D (n_samples, n_features)
+            - When combining, samples are aligned by Env ID
         """
-        if use_3d:
-            # Load 3D temporal weather data
-            weather_3d, sample_ids, feature_names = self.environment_loader.load_weather_data_3d(
-                weather_file,
-                handle_missing=handle_missing
-            )
-            env_data = weather_3d
+        if weather_file is None and soil_file is None and ec_file is None:
+            raise ValueError("至少需要提供一个数据文件 (weather_file, soil_file, 或 ec_file)")
+        
+        print(f"\n{'=' * 70}")
+        print(f"加载环境数据")
+        print(f"{'=' * 70}")
+        
+        env_data_dict = {}  # {env_id: {'weather': ..., 'soil': ..., 'ec': ...}}
+        all_sample_ids = set()
+        feature_info = {}
+        
+        # 1. Load weather data
+        if weather_file is not None:
+            print(f"\n📌 加载天气数据: {weather_file}")
+            if use_3d:
+                weather_data, weather_ids, weather_features = self.environment_loader.load_weather_data_3d(
+                    weather_file,
+                    handle_missing=handle_missing
+                )
+                feature_info['weather'] = {'features': weather_features, 'shape': weather_data.shape, 'is_3d': True}
+                for i, sid in enumerate(weather_ids):
+                    if sid not in env_data_dict:
+                        env_data_dict[sid] = {}
+                    env_data_dict[sid]['weather'] = weather_data[i]
+                    all_sample_ids.add(sid)
+            else:
+                # TODO: Implement 2D static weather loading
+                raise NotImplementedError("2D静态天气数据加载暂未实现")
+        
+        # 2. Load soil data
+        if soil_file is not None:
+            print(f"\n📌 加载土壤数据: {soil_file}")
+            soil_df = pd.read_csv(soil_file)
+            
+            # Find Env column
+            env_col = None
+            for col in ['Env', 'env', 'ENV', 'Environment']:
+                if col in soil_df.columns:
+                    env_col = col
+                    break
+            
+            if env_col is None:
+                raise ValueError(f"土壤数据中找不到环境ID列 (Env)")
+            
+            soil_ids = soil_df[env_col].tolist()
+            
+            # Get numeric columns only
+            numeric_cols = soil_df.select_dtypes(include=[np.number]).columns.tolist()
+            soil_features = [col for col in numeric_cols if col != env_col]
+            
+            # Handle missing values
+            soil_values = soil_df[soil_features].values.astype(np.float32)
+            if handle_missing == 'drop':
+                # Replace NaN with column mean
+                col_means = np.nanmean(soil_values, axis=0)
+                for j in range(soil_values.shape[1]):
+                    mask = np.isnan(soil_values[:, j])
+                    soil_values[mask, j] = col_means[j] if not np.isnan(col_means[j]) else 0
+            elif handle_missing == 'zero':
+                soil_values = np.nan_to_num(soil_values, nan=0.0)
+            
+            feature_info['soil'] = {'features': soil_features, 'shape': soil_values.shape, 'is_3d': False}
+            
+            for i, sid in enumerate(soil_ids):
+                if sid not in env_data_dict:
+                    env_data_dict[sid] = {}
+                env_data_dict[sid]['soil'] = soil_values[i]
+                all_sample_ids.add(sid)
+            
+            print(f"  ✓ 加载 {len(soil_ids)} 个环境, {len(soil_features)} 个土壤特征")
+        
+        # 3. Load EC data
+        if ec_file is not None:
+            print(f"\n📌 加载EC数据: {ec_file}")
+            ec_df = pd.read_csv(ec_file)
+            
+            # Find Env column
+            env_col = None
+            for col in ['Env', 'env', 'ENV', 'Environment']:
+                if col in ec_df.columns:
+                    env_col = col
+                    break
+            
+            if env_col is None:
+                raise ValueError(f"EC数据中找不到环境ID列 (Env)")
+            
+            ec_ids = ec_df[env_col].tolist()
+            
+            # Get numeric columns only
+            numeric_cols = ec_df.select_dtypes(include=[np.number]).columns.tolist()
+            ec_features = [col for col in numeric_cols if col != env_col]
+            
+            # Handle missing values
+            ec_values = ec_df[ec_features].values.astype(np.float32)
+            if handle_missing == 'drop':
+                # Replace NaN with column mean
+                col_means = np.nanmean(ec_values, axis=0)
+                for j in range(ec_values.shape[1]):
+                    mask = np.isnan(ec_values[:, j])
+                    ec_values[mask, j] = col_means[j] if not np.isnan(col_means[j]) else 0
+            elif handle_missing == 'zero':
+                ec_values = np.nan_to_num(ec_values, nan=0.0)
+            
+            feature_info['ec'] = {'features': ec_features, 'shape': ec_values.shape, 'is_3d': False}
+            
+            for i, sid in enumerate(ec_ids):
+                if sid not in env_data_dict:
+                    env_data_dict[sid] = {}
+                env_data_dict[sid]['ec'] = ec_values[i]
+                all_sample_ids.add(sid)
+            
+            print(f"  ✓ 加载 {len(ec_ids)} 个环境, {len(ec_features)} 个EC特征")
+        
+        # 4. Combine data sources
+        print(f"\n📌 合并环境数据")
+        
+        # Find samples with all required data
+        data_types = list(feature_info.keys())
+        complete_samples = []
+        
+        for sid in sorted(all_sample_ids):
+            has_all = all(dtype in env_data_dict.get(sid, {}) for dtype in data_types)
+            if has_all:
+                complete_samples.append(sid)
+        
+        print(f"  - 总环境数: {len(all_sample_ids)}")
+        print(f"  - 完整数据环境数: {len(complete_samples)}")
+        
+        if len(complete_samples) == 0:
+            raise ValueError("没有找到包含所有数据类型的环境！")
+        
+        # Determine output format
+        has_3d = any(info['is_3d'] for info in feature_info.values())
+        has_2d = any(not info['is_3d'] for info in feature_info.values())
+        
+        if has_3d and has_2d:
+            # 3D weather + 2D static features
+            # Return 3D weather data, store static features separately
+            print(f"\n  ⚠️ 检测到3D天气数据 + 2D静态特征")
+            print(f"  - 返回3D天气数据作为主要环境输入")
+            print(f"  - 静态特征 (soil/EC) 存储在 self.static_environment_data")
+            
+            # Collect 3D data
+            weather_3d = []
+            static_data = []
+            
+            weather_features = feature_info.get('weather', {}).get('features', [])
+            static_features = []
+            
+            if 'soil' in feature_info:
+                static_features.extend([f"soil_{f}" for f in feature_info['soil']['features']])
+            if 'ec' in feature_info:
+                static_features.extend([f"ec_{f}" for f in feature_info['ec']['features']])
+            
+            for sid in complete_samples:
+                data = env_data_dict[sid]
+                
+                if 'weather' in data:
+                    weather_3d.append(data['weather'])
+                
+                # Combine static features
+                static_row = []
+                if 'soil' in data:
+                    static_row.extend(data['soil'])
+                if 'ec' in data:
+                    static_row.extend(data['ec'])
+                if static_row:
+                    static_data.append(static_row)
+            
+            env_data = np.array(weather_3d)
+            feature_names = weather_features
+            
+            # Store static data separately
+            if static_data:
+                self.static_environment_data = np.array(static_data)
+                self.static_environment_features = static_features
+                print(f"  - 静态特征形状: {self.static_environment_data.shape}")
+            
+        elif has_3d:
+            # Only 3D data
+            env_data = np.array([env_data_dict[sid]['weather'] for sid in complete_samples])
+            feature_names = feature_info['weather']['features']
             
         else:
-            # Load static weather data
-            weather_static = self.environment_loader.load_weather_data(weather_file)
-            sample_ids = list(weather_static.keys())
-            env_data = np.array([weather_static[sid] for sid in sample_ids])
-            feature_names = list(weather_static[sample_ids[0]].keys()) if sample_ids else []
+            # Only 2D static data - concatenate all
+            combined_data = []
+            feature_names = []
+            
+            for dtype in data_types:
+                info = feature_info[dtype]
+                feature_names.extend([f"{dtype}_{f}" for f in info['features']])
+            
+            for sid in complete_samples:
+                row = []
+                for dtype in data_types:
+                    row.extend(env_data_dict[sid][dtype])
+                combined_data.append(row)
+            
+            env_data = np.array(combined_data)
         
-        # TODO: Integrate soil and EC data if provided
-        # For now, we focus on weather data
+        sample_ids = complete_samples
+        
+        print(f"\n✓ 环境数据加载完成:")
+        print(f"  - 环境数: {len(sample_ids)}")
+        print(f"  - 数据形状: {env_data.shape}")
+        print(f"  - 特征数: {len(feature_names)}")
+        print(f"{'=' * 70}\n")
         
         self.environment_data = env_data
         self.environment_sample_ids = sample_ids
@@ -357,11 +559,15 @@ class GxEDataLoader:
         # 找到可以对齐的样本
         aligned_genetic = []
         aligned_environment = []
+        aligned_static_env = []  # 静态环境数据 (soil, EC)
         aligned_phenotype = []
         aligned_sample_ids = []
         
         n_missing_genetic = 0
         n_missing_environment = 0
+        
+        # 检查是否有静态环境数据
+        has_static_env = self.static_environment_data is not None
         
         for (env, hybrid), pheno_idx in phenotype_mapping.items():
             # 检查基因型是否存在
@@ -385,6 +591,10 @@ class GxEDataLoader:
                 aligned_environment.append(self.environment_data[env_idx])
                 aligned_phenotype.append(self.phenotype_data[pheno_idx])
                 aligned_sample_ids.append(self.phenotype_sample_ids[pheno_idx])
+                
+                # 如果有静态环境数据，也对齐
+                if has_static_env:
+                    aligned_static_env.append(self.static_environment_data[env_idx])
         
         if n_missing_genetic > 0:
             print(f"\n⚠️ 警告: {n_missing_genetic} 个表型样本缺少对应的基因型数据")
@@ -405,11 +615,23 @@ class GxEDataLoader:
         aligned_environment = np.array(aligned_environment)
         aligned_phenotype = np.array(aligned_phenotype)
         
-        print(f"\n✓ 对齐成功:")
-        print(f"  - 对齐样本数: {len(aligned_sample_ids)}")
-        print(f"  - 基因型形状: {aligned_genetic.shape}")
-        print(f"  - 环境形状: {aligned_environment.shape}")
-        print(f"  - 表型形状: {aligned_phenotype.shape}")
+        # 处理静态环境数据
+        if has_static_env and aligned_static_env:
+            aligned_static_env = np.array(aligned_static_env)
+            self.aligned_static_environment = aligned_static_env
+            print(f"\n✓ 对齐成功:")
+            print(f"  - 对齐样本数: {len(aligned_sample_ids)}")
+            print(f"  - 基因型形状: {aligned_genetic.shape}")
+            print(f"  - 环境形状 (3D): {aligned_environment.shape}")
+            print(f"  - 静态环境形状: {aligned_static_env.shape}")
+            print(f"  - 表型形状: {aligned_phenotype.shape}")
+        else:
+            self.aligned_static_environment = None
+            print(f"\n✓ 对齐成功:")
+            print(f"  - 对齐样本数: {len(aligned_sample_ids)}")
+            print(f"  - 基因型形状: {aligned_genetic.shape}")
+            print(f"  - 环境形状: {aligned_environment.shape}")
+            print(f"  - 表型形状: {aligned_phenotype.shape}")
         
         # 打印一些对齐的样本示例
         print(f"\n对齐样本示例:")
