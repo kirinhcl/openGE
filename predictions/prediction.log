@@ -55,3 +55,39 @@
 2025-12-29 10:09:44,604 - __main__ - INFO - 
 Prediction complete! Results saved to predictions
 2025-12-29 10:09:44,604 - __main__ - INFO - ======================================================================
+2025-12-29 13:28:41,090 - __main__ - INFO - ======================================================================
+2025-12-29 13:28:41,090 - __main__ - INFO - G×E Crop Trait Prediction - Inference
+2025-12-29 13:28:41,090 - __main__ - INFO - ======================================================================
+2025-12-29 13:28:41,106 - __main__ - INFO - Using device: mps
+2025-12-29 13:28:41,106 - __main__ - INFO - Loading model from outputs/run_20251229_101431/best_model.pt
+2025-12-29 13:28:41,220 - __main__ - INFO - Model trained at epoch 3
+2025-12-29 13:28:41,221 - __main__ - INFO - Validation R²: 0.5257
+2025-12-29 13:28:41,266 - __main__ - INFO - Model loaded successfully
+2025-12-29 13:28:41,266 - __main__ - INFO - Loading test data from ./Testing_data
+2025-12-29 13:28:41,267 - __main__ - INFO - Using observed values file for evaluation
+2025-12-29 13:28:41,267 - __main__ - INFO - Loading genetic data...
+2025-12-29 13:28:42,234 - __main__ - INFO - Genetic data shape: (5899, 2397)
+2025-12-29 13:28:42,234 - __main__ - INFO - Loading test environment data...
+2025-12-29 13:28:42,247 - __main__ - INFO - Environment data shape: (15, 684)
+2025-12-29 13:28:42,247 - __main__ - INFO - Loading test sample IDs...
+2025-12-29 13:28:42,253 - __main__ - INFO - Test samples: 9486
+2025-12-29 13:28:42,253 - __main__ - INFO - Aligning test samples...
+2025-12-29 13:28:42,294 - __main__ - INFO - Aligned test samples: 6467
+2025-12-29 13:28:42,294 - __main__ - INFO - Preprocessing data...
+2025-12-29 13:28:42,430 - __main__ - INFO - Running inference...
+2025-12-29 14:54:20,378 - __main__ - INFO - Inference complete: 6467 predictions
+2025-12-29 14:54:20,433 - __main__ - INFO - 
+==================================================
+2025-12-29 14:54:20,433 - __main__ - INFO - Evaluation Results
+2025-12-29 14:54:20,433 - __main__ - INFO - ==================================================
+2025-12-29 14:54:20,471 - __main__ - INFO -   RMSE:        2.7309
+2025-12-29 14:54:20,471 - __main__ - INFO -   R²:          0.0473
+2025-12-29 14:54:20,472 - __main__ - INFO -   MAE:         2.1872
+2025-12-29 14:54:20,472 - __main__ - INFO -   Correlation: 0.3451
+2025-12-29 14:54:20,472 - __main__ - INFO - ==================================================
+2025-12-29 14:54:20,627 - __main__ - INFO - Predictions saved to predictions/predictions.csv
+2025-12-29 14:54:20,644 - __main__ - INFO - Submission file saved to predictions/submission.csv
+2025-12-29 14:54:20,646 - __main__ - INFO - Metrics saved to predictions/evaluation_metrics.json
+2025-12-29 14:54:20,656 - __main__ - INFO - 
+Prediction complete! Results saved to predictions
+2025-12-29 14:54:20,656 - __main__ - INFO - ======================================================================
