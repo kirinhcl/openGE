@@ -1,49 +1,65 @@
 # Maize Crop Configuration (2024)
 # Crop-specific parameters for maize trait prediction
+#
+# Usage: python train.py --config configs/maize_2024.yaml --data-dir ./Training_data
 
 crop: "maize"
 year: 2024
 
-# Data paths
-data:
-  genetic_file: "Training_data/5_Genotype_Data_All_2014_2025_Hybrids_numerical.txt"
-  environment_files:
-    weather: "Training_data/4_Training_Weather_Data_2014_2023_full_year.csv"
-    soil: "Training_data/3_Training_Soil_Data_2015_2023.csv"
-    ec: "Training_data/6_Training_EC_Data_2014_2023.csv"
-  phenotype_file: "Training_data/1_Training_Trait_Data_2014_2023.csv"
-  meta_file: "Training_data/2_Training_Meta_Data_2014_2023.csv"
-
-# Traits to predict
-traits:
-  - name: "Grain_Yield"
-    type: "continuous"
-    unit: "kg/ha"
-
-# Model specific for maize
+# =============================================================================
+# Model Architecture - Optimized for Maize
+# =============================================================================
 model:
-  name: "gxe_model"
-  genetic_encoder:
-    name: "transformer"
-    input_dim: 40000  # Maize SNP count
-    hidden_dim: 256
-    n_layers: 2
+  # Use MLP for genetic encoder (faster, good for dense SNP data)
+  genetic_encoder: "mlp"
+  genetic_hidden_dim: 256
+  genetic_hidden_dims: [1024, 512, 256]  # Deeper network for large SNP data
   
-  env_encoder:
-    name: "mlp"
-    input_dim: 30
-    hidden_dims: [128, 64]
+  # Environment encoder
+  env_hidden_dim: 128
+  env_hidden_dims: [256, 128]            # Larger for rich EC features
   
-  fusion:
-    name: "attention"
+  # Fusion
+  fusion: "attention"
+  
+  # Head
+  head_hidden_dims: [64, 32]
+  
+  dropout: 0.2                           # Higher dropout for regularization
 
+# =============================================================================
+# Training Configuration
+# =============================================================================
 training:
-  batch_size: 16
+  batch_size: 64
   epochs: 100
-  learning_rate: 0.001
+  learning_rate: 0.0005                  # Lower LR for stability
+  weight_decay: 0.0001
+  early_stopping_patience: 20
+  
+  train_ratio: 0.7
+  val_ratio: 0.15
 
-# Maize-specific preprocessing
-preprocessing:
-  missing_value_threshold: 0.2
-  outlier_removal: true
-  seasonal_aggregation: ["spring", "summer", "fall"]
+# =============================================================================
+# Data Configuration
+# =============================================================================
+data:
+  # Primary trait: Grain Yield
+  target_traits:
+    - "Yield_Mg_ha"
+  
+  # Can also predict multiple traits:
+  # target_traits:
+  #   - "Yield_Mg_ha"
+  #   - "Plant_Height_cm"
+  #   - "Ear_Height_cm"
+  
+  genetic_missing_threshold: 0.5
+  normalization: "standard"
+
+# =============================================================================
+# Logging
+# =============================================================================
+logging:
+  level: "INFO"
+  save_dir: "./outputs/maize_2024"

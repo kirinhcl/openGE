@@ -1,48 +1,63 @@
 # Wheat Crop Configuration (2025)
-# Crop-specific parameters for wheat trait prediction
+# Template for wheat trait prediction (adapt paths for your data)
+#
+# Usage: python train.py --config configs/wheat_2025.yaml --data-dir ./Wheat_data
 
 crop: "wheat"
 year: 2025
 
-# Data paths (to be updated with actual wheat data)
-data:
-  genetic_file: "path/to/wheat_genotypes.vcf"
-  environment_files:
-    weather: "path/to/wheat_weather.csv"
-    soil: "path/to/wheat_soil.csv"
-  phenotype_file: "path/to/wheat_phenotypes.csv"
-
-# Traits to predict
-traits:
-  - name: "Grain_Yield"
-    type: "continuous"
-  - name: "Protein_Content"
-    type: "continuous"
-  - name: "Disease_Resistance"
-    type: "categorical"
-
-# Model configuration for wheat
+# =============================================================================
+# Model Architecture - Optimized for Wheat
+# =============================================================================
 model:
-  name: "gxe_model"
-  genetic_encoder:
-    name: "transformer"
-    input_dim: 30000  # Wheat SNP count
-    hidden_dim: 256
-    n_layers: 3
+  # CNN encoder can capture local patterns in wheat genome
+  genetic_encoder: "cnn"
+  genetic_hidden_dim: 256
+  genetic_n_filters: 128
+  genetic_kernel_sizes: [7, 5, 3]
   
-  env_encoder:
-    name: "mlp"
-    input_dim: 28
-    hidden_dims: [128, 64]
+  # Environment encoder
+  env_hidden_dim: 64
+  env_hidden_dims: [128, 64]
   
-  fusion:
-    name: "gating"
+  # Fusion - use concat for multi-trait prediction
+  fusion: "concat"
+  fusion_dim: 128
+  
+  # Head for multiple traits
+  head_hidden_dims: [64, 32]
+  
+  dropout: 0.15
 
+# =============================================================================
+# Training Configuration
+# =============================================================================
 training:
-  batch_size: 24
+  batch_size: 48
   epochs: 120
   learning_rate: 0.0008
+  weight_decay: 0.0001
+  early_stopping_patience: 15
+  
+  train_ratio: 0.7
+  val_ratio: 0.15
 
-preprocessing:
-  seasonal_aggregation: ["spring", "summer"]
-  temperature_threshold: 15.0  # Wheat-specific growing temp
+# =============================================================================
+# Data Configuration
+# =============================================================================
+data:
+  # Wheat traits (adjust based on your phenotype file columns)
+  target_traits:
+    - "Grain_Yield"
+    # - "Protein_Content"
+    # - "Disease_Resistance"
+  
+  genetic_missing_threshold: 0.4
+  normalization: "standard"
+
+# =============================================================================
+# Logging
+# =============================================================================
+logging:
+  level: "INFO"
+  save_dir: "./outputs/wheat_2025"

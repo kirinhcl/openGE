@@ -1,36 +1,59 @@
 # Sparse Transformer Configuration
-# Extends base.yaml with sparsity-specific settings
+# Uses Transformer encoder with sparse attention for large SNP datasets
+#
+# Usage: python train.py --config configs/sparse_transformer.yaml --data-dir ./Training_data
 
+# =============================================================================
+# Model Architecture - Sparse Transformer
+# =============================================================================
 model:
-  name: "gxe_sparse_model"
-  genetic_encoder:
-    name: "weight_sparse_transformer"
-    input_dim: 50000
-    hidden_dim: 256
-    n_layers: 2
-    n_heads: 8
-    sparsity_level: 0.8  # 80% sparsity
-
-  env_encoder:
-    name: "mlp"
-    input_dim: 32
-    hidden_dims: [128, 64]
-    output_dim: 64
+  # Use Transformer for genetic encoder (better for capturing long-range dependencies)
+  genetic_encoder: "transformer"
+  genetic_hidden_dim: 256
+  genetic_n_heads: 8
+  genetic_n_layers: 3                    # Deeper transformer
   
-  fusion:
-    name: "attention"
-    hidden_dim: 256
+  # Environment encoder
+  env_hidden_dim: 64
+  env_hidden_dims: [128, 64]
+  
+  # Fusion
+  fusion: "attention"
+  
+  # Head
+  head_hidden_dims: [128, 64]
+  
+  dropout: 0.1
+  
+  # Sparsity settings (for WeightSparseTransformer if used)
+  sparsity_level: 0.8                    # 80% weights are zero
 
+# =============================================================================
+# Training Configuration
+# =============================================================================
 training:
-  batch_size: 32
+  batch_size: 32                         # Smaller batch for transformer memory
   epochs: 150
-  learning_rate: 0.0005
+  learning_rate: 0.0005                  # Lower LR for transformer
   weight_decay: 0.0001
-  early_stopping_patience: 15
+  early_stopping_patience: 20
+  
+  train_ratio: 0.7
+  val_ratio: 0.15
 
-interpretability:
-  enable_sparsity_analysis: true
-  sparsity_analysis:
-    enabled: true
-    target_sparsity: 0.8
-    pruning_method: "magnitude"  # or "structured"
+# =============================================================================
+# Data Configuration
+# =============================================================================
+data:
+  target_traits:
+    - "Yield_Mg_ha"
+  
+  genetic_missing_threshold: 0.5
+  normalization: "standard"
+
+# =============================================================================
+# Logging
+# =============================================================================
+logging:
+  level: "INFO"
+  save_dir: "./outputs/sparse_transformer"

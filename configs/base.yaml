@@ -1,60 +1,68 @@
 # OpenGE Configuration Template
 # Base configuration shared across crops
+# 
+# Usage: python train.py --config configs/base.yaml --data-dir ./Training_data
 
+# =============================================================================
 # Model Architecture
+# =============================================================================
 model:
-  name: "gxe_model"
-  genetic_encoder:
-    name: "transformer"
-    input_dim: 50000  # SNP marker count
-    hidden_dim: 256
-    n_layers: 2
-    n_heads: 8
+  # Genetic encoder type: 'mlp', 'transformer', or 'cnn'
+  genetic_encoder: "mlp"
+  genetic_hidden_dim: 256           # Output dimension of genetic encoder
+  genetic_hidden_dims: [512, 256]   # Hidden layers for MLP encoder
+  genetic_n_heads: 8                # For transformer encoder
+  genetic_n_layers: 2               # For transformer encoder
+  genetic_n_filters: 64             # For CNN encoder
+  genetic_kernel_sizes: [7, 5, 3]   # For CNN encoder
   
-  env_encoder:
-    name: "mlp"
-    input_dim: 32  # Weather + Soil + EC features
-    hidden_dims: [128, 64]
-    output_dim: 64
+  # Environment encoder (always MLP)
+  env_hidden_dim: 64                # Output dimension of env encoder
+  env_hidden_dims: [128, 64]        # Hidden layers for env MLP
   
-  fusion:
-    name: "attention"
-    hidden_dim: 256
+  # Fusion layer: 'attention' or 'concat'
+  fusion: "attention"
+  fusion_dim: 128                   # For concat fusion only
   
-  head:
-    name: "regression"
-    output_dim: 1  # Single trait or multiple
+  # Prediction head
+  head_hidden_dims: [64]            # Hidden layers before output
+  
+  # Regularization
+  dropout: 0.1
 
+# =============================================================================
 # Training Configuration
+# =============================================================================
 training:
   batch_size: 32
   epochs: 100
   learning_rate: 0.001
   weight_decay: 0.0001
-  early_stopping_patience: 10
-  device: "cuda"  # or "cpu"
+  early_stopping_patience: 15
+  
+  # Data split ratios
+  train_ratio: 0.7
+  val_ratio: 0.15
+  # test_ratio is automatically 1 - train_ratio - val_ratio
 
+# =============================================================================
 # Data Configuration
+# =============================================================================
 data:
-  train_split: 0.8
-  val_split: 0.1
-  test_split: 0.1
-  normalize: true
-  imputation_strategy: "mean"
+  # Target traits to predict (column names in phenotype file)
+  target_traits:
+    - "Yield_Mg_ha"
+  
+  # Genetic data preprocessing
+  genetic_missing_threshold: 0.5    # Remove markers with >50% missing
+  
+  # Normalization method: 'standard' or 'minmax'
+  normalization: "standard"
 
-# Interpretability
-interpretability:
-  enable_attention_analysis: true
-  enable_feature_importance: true
-  enable_shap: false
-  save_attention_weights: true
-  sparsity_analysis:
-    enabled: false
-    target_sparsity: 0.8
-
+# =============================================================================
 # Logging
+# =============================================================================
 logging:
-  level: "INFO"
-  save_dir: "./results"
-  save_checkpoint: true
-  checkpoint_interval: 10
+  level: "INFO"                     # DEBUG, INFO, WARNING, ERROR
+  save_dir: "./outputs"
+
