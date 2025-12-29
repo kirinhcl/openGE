@@ -631,31 +631,3 @@ Examples:
     
     args = parser.parse_args()
     main(args)
-    # history = trainer.fit(train_loader, val_loader, epochs=config.get("training.epochs", 100))
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Train crop trait prediction model with G×E interactions"
-    )
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="configs/base.yaml",
-        help="Path to configuration file"
-    )
-    parser.add_argument(
-        "--data-dir",
-        type=str,
-        default="./Training_data",
-        help="Path to training data directory"
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="./results",
-        help="Path to output directory"
-    )
-    
-    args = parser.parse_args()
-    main(args)

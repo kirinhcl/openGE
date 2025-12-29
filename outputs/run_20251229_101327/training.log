@@ -1,0 +1,24 @@
+2025-12-29 10:13:27,277 - __main__ - INFO - ======================================================================
+2025-12-29 10:13:27,277 - __main__ - INFO - Starting G×E Crop Trait Prediction Training
+2025-12-29 10:13:27,277 - __main__ - INFO - ======================================================================
+2025-12-29 10:13:27,279 - __main__ - INFO - Loaded configuration from configs/maize_transformer.yaml
+2025-12-29 10:13:27,291 - __main__ - INFO - Using device: mps
+2025-12-29 10:13:27,291 - __main__ - INFO - Loading data from ./Training_data
+2025-12-29 10:13:27,291 - __main__ - INFO - Loading genetic data...
+2025-12-29 10:13:28,239 - __main__ - INFO - Genetic data shape: (5899, 2397)
+2025-12-29 10:13:28,239 - __main__ - INFO - Loading environment data...
+2025-12-29 10:13:28,266 - __main__ - INFO - Environment data shape: (167, 684)
+2025-12-29 10:13:28,267 - __main__ - INFO - Loading phenotype data...
+2025-12-29 10:13:28,532 - __main__ - INFO - Phenotype data shape: (164921, 1)
+2025-12-29 10:13:28,532 - __main__ - INFO - Target traits: ['Yield_Mg_ha']
+2025-12-29 10:13:28,532 - __main__ - INFO - Aligning samples...
+2025-12-29 10:13:28,964 - __main__ - INFO - Aligned samples: 68558
+2025-12-29 10:13:28,964 - __main__ - INFO - Preprocessing data...
+2025-12-29 10:13:30,554 - __main__ - INFO - Dataset: 68558 samples, 2397 markers, 684 env features, 1 traits
+2025-12-29 10:13:30,556 - __main__ - INFO - Data split: train=47990, val=10283, test=10285
+2025-12-29 10:13:30,725 - __main__ - INFO - Building G×E model...
+2025-12-29 10:13:30,777 - __main__ - INFO - Model built: 3,921,025 total parameters, 3,921,025 trainable
+2025-12-29 10:13:31,310 - __main__ - INFO - 
+Starting training for 100 epochs...
+2025-12-29 10:13:31,310 - __main__ - INFO - Batch size: 32, Learning rate: 0.0003
+2025-12-29 10:13:31,310 - __main__ - INFO - ----------------------------------------------------------------------
