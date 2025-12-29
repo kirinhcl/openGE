@@ -1,0 +1,59 @@
+# Maize Crop Configuration - Transformer Encoder
+# Uses Transformer for genetic encoding to capture long-range SNP interactions
+#
+# Usage: python train.py --config configs/maize_transformer.yaml --data-dir ./Training_data
+
+crop: "maize"
+year: 2024
+
+# =============================================================================
+# Model Architecture - Transformer for Genetic Encoding
+# =============================================================================
+model:
+  # Transformer encoder for capturing complex SNP interactions
+  genetic_encoder: "transformer"
+  genetic_hidden_dim: 256           # Output dimension
+  genetic_n_heads: 8                # Multi-head attention heads
+  genetic_n_layers: 3               # Transformer layers (deeper for complex patterns)
+  
+  # Environment encoder (MLP)
+  env_hidden_dim: 128
+  env_hidden_dims: [256, 128]
+  
+  # Fusion - attention-based G×E interaction
+  fusion: "attention"
+  
+  # Prediction head
+  head_hidden_dims: [128, 64]
+  
+  dropout: 0.1                      # Lower dropout for transformer
+
+# =============================================================================
+# Training Configuration
+# =============================================================================
+training:
+  batch_size: 8                    # Smaller batch for transformer memory
+  epochs: 100
+  learning_rate: 0.0003             # Lower LR for transformer stability
+  weight_decay: 0.0001
+  early_stopping_patience: 20
+  
+  train_ratio: 0.7
+  val_ratio: 0.15
+
+# =============================================================================
+# Data Configuration
+# =============================================================================
+data:
+  target_traits:
+    - "Yield_Mg_ha"
+  
+  genetic_missing_threshold: 0.5
+  normalization: "standard"
+
+# =============================================================================
+# Logging
+# =============================================================================
+logging:
+  level: "INFO"
+  save_dir: "./outputs/maize_transformer"

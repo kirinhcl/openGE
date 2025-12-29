@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openGE"
+version = "0.1.0"
+description = "A multi-crop trait prediction library with G×E (Genotype × Environment) interaction modeling"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "OpenGE Contributors", email = "info@openge.org"},
+]
+keywords = ["crop", "genomics", "phenotype", "prediction", "machine-learning", "deep-learning"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+dependencies = [
+    "torch>=1.9.0",
+    "numpy>=1.20.0",
+    "pandas>=1.3.0",
+    "scikit-learn>=1.0.0",
+    "PyYAML>=5.4.0",
+    "matplotlib>=3.4.0",
+    "tqdm>=4.62.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.2.0",
+    "pytest-cov>=2.12.0",
+    "black>=21.6b0",
+    "flake8>=3.9.0",
+    "isort>=5.9.0",
+]
+interpretability = [
+    "shap>=0.40.0",
+    "captum>=0.4.0",
+]
+sparse = [
+    "torch-pruning>=0.0.1",
+]
+all = [
+    "shap>=0.40.0",
+    "captum>=0.4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/kirinhcl/openGE"
+Documentation = "https://openge.readthedocs.io"
+Repository = "https://github.com/kirinhcl/openGE.git"
+Issues = "https://github.com/kirinhcl/openGE/issues"
+
+[tool.setuptools]
+packages = ["openge"]
+
+[tool.black]
+line-length = 100
+target-version = ["py38", "py39", "py310", "py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]

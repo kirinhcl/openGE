@@ -1,0 +1,68 @@
+# OpenGE Configuration Template
+# Base configuration shared across crops
+# 
+# Usage: python train.py --config configs/base.yaml --data-dir ./Training_data
+
+# =============================================================================
+# Model Architecture
+# =============================================================================
+model:
+  # Genetic encoder type: 'mlp', 'transformer', or 'cnn'
+  genetic_encoder: "mlp"
+  genetic_hidden_dim: 256           # Output dimension of genetic encoder
+  genetic_hidden_dims: [512, 256]   # Hidden layers for MLP encoder
+  genetic_n_heads: 8                # For transformer encoder
+  genetic_n_layers: 2               # For transformer encoder
+  genetic_n_filters: 64             # For CNN encoder
+  genetic_kernel_sizes: [7, 5, 3]   # For CNN encoder
+  
+  # Environment encoder (always MLP)
+  env_hidden_dim: 64                # Output dimension of env encoder
+  env_hidden_dims: [128, 64]        # Hidden layers for env MLP
+  
+  # Fusion layer: 'attention' or 'concat'
+  fusion: "attention"
+  fusion_dim: 128                   # For concat fusion only
+  
+  # Prediction head
+  head_hidden_dims: [64]            # Hidden layers before output
+  
+  # Regularization
+  dropout: 0.1
+
+# =============================================================================
+# Training Configuration
+# =============================================================================
+training:
+  batch_size: 32
+  epochs: 100
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 15
+  
+  # Data split ratios
+  train_ratio: 0.7
+  val_ratio: 0.15
+  # test_ratio is automatically 1 - train_ratio - val_ratio
+
+# =============================================================================
+# Data Configuration
+# =============================================================================
+data:
+  # Target traits to predict (column names in phenotype file)
+  target_traits:
+    - "Yield_Mg_ha"
+  
+  # Genetic data preprocessing
+  genetic_missing_threshold: 0.5    # Remove markers with >50% missing
+  
+  # Normalization method: 'standard' or 'minmax'
+  normalization: "standard"
+
+# =============================================================================
+# Logging
+# =============================================================================
+logging:
+  level: "INFO"                     # DEBUG, INFO, WARNING, ERROR
+  save_dir: "./outputs"
+

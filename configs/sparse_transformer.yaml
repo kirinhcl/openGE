@@ -1,0 +1,59 @@
+# Sparse Transformer Configuration
+# Uses Transformer encoder with sparse attention for large SNP datasets
+#
+# Usage: python train.py --config configs/sparse_transformer.yaml --data-dir ./Training_data
+
+# =============================================================================
+# Model Architecture - Sparse Transformer
+# =============================================================================
+model:
+  # Use Transformer for genetic encoder (better for capturing long-range dependencies)
+  genetic_encoder: "transformer"
+  genetic_hidden_dim: 256
+  genetic_n_heads: 8
+  genetic_n_layers: 3                    # Deeper transformer
+  
+  # Environment encoder
+  env_hidden_dim: 64
+  env_hidden_dims: [128, 64]
+  
+  # Fusion
+  fusion: "attention"
+  
+  # Head
+  head_hidden_dims: [128, 64]
+  
+  dropout: 0.1
+  
+  # Sparsity settings (for WeightSparseTransformer if used)
+  sparsity_level: 0.8                    # 80% weights are zero
+
+# =============================================================================
+# Training Configuration
+# =============================================================================
+training:
+  batch_size: 32                         # Smaller batch for transformer memory
+  epochs: 150
+  learning_rate: 0.0005                  # Lower LR for transformer
+  weight_decay: 0.0001
+  early_stopping_patience: 20
+  
+  train_ratio: 0.7
+  val_ratio: 0.15
+
+# =============================================================================
+# Data Configuration
+# =============================================================================
+data:
+  target_traits:
+    - "Yield_Mg_ha"
+  
+  genetic_missing_threshold: 0.5
+  normalization: "standard"
+
+# =============================================================================
+# Logging
+# =============================================================================
+logging:
+  level: "INFO"
+  save_dir: "./outputs/sparse_transformer"
