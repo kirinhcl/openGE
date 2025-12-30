@@ -6,9 +6,24 @@ OpenGE is a deep learning library designed for **crop trait prediction** using *
 
 ✨ **Core Capabilities**
 - **G×E Interaction Modeling**: Explicitly captures how genetic and environmental factors interact to influence crop traits
-- **Multi-Crop Support**: Easily adapt the library to different crops through configuration files
-- **Modular Architecture**: Flexible combination of genetic/environment encoders and fusion strategies
-- **Production-Ready**: Includes training, prediction, and evaluation pipelines
+- **Multi-Crop Support**: Easily adapt to different crops through configuration files
+- **Modular Architecture**: Flexible combination of encoders (MLP, CNN, Transformer, CNN+Transformer) and fusion strategies
+- **Production-Ready**: Complete training, prediction, and evaluation pipelines with progress bars
+- **Comprehensive Logging**: Detailed logs with hyperparameters, model architecture, and training history
+
+🧬 **Genetic Encoders**
+- **MLP Encoder**: Fast and effective for dense SNP data
+- **CNN Encoder**: Captures local linkage patterns in genetic markers
+- **Transformer Encoder**: Models long-range dependencies across the genome
+- **CNN+Transformer Hybrid**: Combines local pattern detection with global context
+
+🌍 **Environment Encoders**
+- **MLP Encoder**: For weather, soil, and environmental covariate (EC) data
+- Supports multi-source environmental data integration
+
+🔗 **Fusion Strategies**
+- **Attention Fusion**: Learns dynamic weighting of genetic vs environmental contributions
+- **Concatenation Fusion**: Simple concatenation with projection
 
 🔍 **Interpretability**
 - **Attention Analysis**: Visualize which genetic markers and environmental factors matter most
@@ -44,20 +59,44 @@ pip install -e ".[all]"
 
 ### 1. Training
 
+Train a model with a configuration file:
 ```bash
 python train.py --config configs/maize_2024.yaml --data-dir ./Training_data
 ```
 
+Or with custom hyperparameters:
+```bash
+python train.py --data-dir ./Training_data --epochs 50 --batch-size 64 --lr 0.0005
+```
+
+Training outputs are saved to `outputs/run_YYYYMMDD_HHMMSS/` including:
+- `best_model.pt` - Model checkpoint with weights and configuration
+- `results.json` - Complete results with hyperparameters and architecture
+- `training.log` - Detailed training logs
+- `test_predictions.npz` - Test set predictions
+
 ### 2. Prediction
 
+Make predictions with a trained model:
 ```bash
-python predict.py --model-path results/best_model.pt --config configs/maize_2024.yaml --data-dir ./Testing_data
+python predict.py --model-path outputs/run_xxx/best_model.pt --data-dir ./Testing_data
 ```
+
+Custom output directory:
+```bash
+python predict.py --model-path outputs/run_xxx/best_model.pt --data-dir ./Testing_data --output-dir ./my_predictions
+```
+
+Predictions are saved to `predictions/pred_YYYYMMDD_HHMMSS/` including:
+- `predictions.csv` - Detailed predictions with sample IDs
+- `submission.csv` - Competition-ready submission format
+- `evaluation_metrics.json` - Performance metrics (if targets available)
+- `predictions.npz` - Raw numpy arrays
 
 ### 3. Interpretability Analysis
 
 ```bash
-python interpret.py --model-path results/best_model.pt --config configs/maize_2024.yaml --data-dir ./data
+python interpret.py --model-path outputs/run_xxx/best_model.pt --config configs/maize_2024.yaml --data-dir ./data
 ```
 
 ## Project Structure
@@ -105,89 +144,276 @@ openge/
 
 ## Configuration
 
-### Base Configuration (`configs/base.yaml`)
-Defines default settings for model architecture, training hyperparameters, and data preprocessing.
+### Available Configurations
+- `base.yaml`: Base configuration template with all available options
+- `maize_2024.yaml`: MLP encoder optimized for maize (default)
+- `maize_transformer.yaml`: Transformer encoder for maize
+- `maize_cnn_transformer.yaml`: Hybrid CNN+Transformer encoder for maize
+- `sparse_transformer.yaml`: Weight-sparse transformer for interpretability
+- `wheat_2025.yaml`: Configuration for wheat trait prediction
 
-### Crop-Specific Configurations
-- `maize_2024.yaml`: Optimized settings for maize trait prediction
-- `wheat_2025.yaml`: Optimized settings for wheat trait prediction
-
-Example crop config:
+### Crop-Specific Configuration Example
 ```yaml
 crop: "maize"
 year: 2024
 
 model:
-  genetic_encoder:
-    name: "transformer"
-    input_dim: 40000  # Maize SNP count
-    hidden_dim: 256
-  env_encoder:
-    name: "mlp"
-    input_dim: 30
+  # Choose encoder: mlp, cnn, transformer, or cnn_transformer
+  genetic_encoder: "mlp"
+  genetic_hidden_dim: 256           # Output dimension
+  genetic_hidden_dims: [1024, 512, 256]  # MLP internal layers
+  
+  env_hidden_dim: 128
+  env_hidden_dims: [256, 128]
+  
+  fusion: "attention"               # or "concat"
+  head_hidden_dims: [64, 32]
+  dropout: 0.2
 
 training:
-  batch_size: 16
+  batch_size: 64
   epochs: 100
-  learning_rate: 0.001
+  learning_rate: 0.0005
+  weight_decay: 0.0001
+  early_stopping_patience: 20
+  train_ratio: 0.7
+  val_ratio: 0.15
+
+data:
+  target_traits: ["Yield_Mg_ha"]
+  genetic_missing_threshold: 0.5
+  normalization: "standard"
+```
+
+### CNN+Transformer Hybrid Example
+```yaml
+model:
+  genetic_encoder: "cnn_transformer"
+  genetic_hidden_channels: [64, 128, 256]  # CNN channels
+  genetic_kernel_sizes: [7, 5, 3]          # CNN kernels
+  cnn_output_dim: 512                      # CNN → Transformer dimension
+  genetic_hidden_dim: 256                  # Final output dimension
+  genetic_n_heads: 8                       # Transformer heads
+  genetic_n_layers: 2                      # Transformer layers
 ```
 
 ## Model Architectures
 
 ### G×E Model
-The core model combines:
-- **Genetic Encoder**: Processes SNP/marker data (CNN, Transformer, or MLP)
-- **Environment Encoder**: Processes weather, soil, EC data (typically MLP)
-- **Fusion Layer**: Combines representations (Concatenation, Attention, or Gating)
-- **Prediction Head**: Generates trait predictions (Regression or Classification)
+The core model combines four components:
+1. **Genetic Encoder**: Processes SNP/marker data
+   - `mlp`: Multi-layer perceptron (fast, good for dense data)
+   - `cnn`: Convolutional neural network (captures local LD patterns)
+   - `transformer`: Self-attention mechanism (models long-range dependencies)
+   - `cnn_transformer`: Hybrid architecture (local + global patterns)
 
-### Attention Fusion
-The default fusion strategy uses learned attention to weight the contribution of genetic vs environmental factors dynamically.
+2. **Environment Encoder**: Processes environmental data (MLP)
+   - Weather, soil, and environmental covariate (EC) features
+   - Supports multi-source data integration
 
-### Weight-Sparse Transformers
-For interpretability, sparse transformers enforce sparsity patterns in:
-- Attention heads (top-K attention)
-- Feedforward connections (magnitude pruning)
+3. **Fusion Layer**: Combines genetic and environmental representations
+   - `attention`: Learned dynamic weighting of G vs E contributions
+   - `concat`: Simple concatenation with projection
+
+4. **Prediction Head**: Generates trait predictions
+   - Regression head for continuous traits (e.g., yield)
+   - Classification head for categorical traits
+
+### Architecture Examples
+
+**MLP Encoder (Default)**
+```
+Input: 2397 SNP markers
+  ↓ Linear(2397 → 1024) + BatchNorm + ReLU + Dropout
+  ↓ Linear(1024 → 512) + BatchNorm + ReLU + Dropout  
+  ↓ Linear(512 → 256) + BatchNorm + ReLU + Dropout
+Output: 256-dim embedding
+```
+
+**CNN+Transformer Hybrid**
+```
+Input: 2397 SNP markers
+  ↓ CNN: Conv1D(64, 128, 256 channels) + MaxPool
+  ↓ Flatten + Linear → 512-dim
+  ↓ Transformer: Multi-head attention (8 heads, 2 layers)
+Output: 256-dim embedding
+```
+
+**Attention Fusion**
+```
+Genetic embedding (256-dim) + Environment embedding (128-dim)
+  ↓ Cross-attention: Q=genetic, K=env, V=env
+  ↓ Residual connection
+Output: 256-dim fused representation → Prediction head
+```
+
+### Model Sizes
+- **MLP (default)**: ~4.4M parameters
+- **CNN**: ~2-5M parameters (depending on channels)
+- **Transformer**: ~8-15M parameters (depending on layers/heads)
+- **CNN+Transformer**: ~82M parameters (hybrid architecture)
 
 ## Training
 
+### Command Line Interface
+
+Basic training:
+```bash
+python train.py --data-dir ./Training_data
+```
+
+With configuration file:
+```bash
+python train.py --config configs/maize_2024.yaml --data-dir ./Training_data
+```
+
+Override hyperparameters:
+```bash
+python train.py --data-dir ./Training_data --epochs 50 --batch-size 64 --lr 0.0005
+```
+
+Use GPU:
+```bash
+python train.py --data-dir ./Training_data --device cuda
+```
+
+### Programmatic Usage
+
 ```python
-from openge.core import Config, Trainer
+from openge.core import Config
 from openge.models import GxEModel
+import torch.nn as nn
 
 # Load configuration
 config = Config("configs/maize_2024.yaml")
 
-# Build model
-model = build_model(config)
+# Model is built automatically in train.py
+# Or build manually:
+from train import build_model, load_data
 
-# Setup trainer
-trainer = Trainer(
-    model=model,
-    criterion=nn.MSELoss(),
-    optimizer=torch.optim.Adam(model.parameters()),
-    device="cuda"
-)
+dataset, preprocessors, data_info = load_data(config.config, data_dir, logger)
+model = build_model(config.config, data_info, device="cuda", logger=logger)
 
 # Train
-history = trainer.fit(train_loader, val_loader, epochs=100)
+# See train.py for complete training loop with:
+# - Progress bars (tqdm)
+# - Early stopping
+# - Learning rate scheduling
+# - Model checkpointing
+```
+
+### Output Structure
+
+Training outputs are saved to `outputs/run_YYYYMMDD_HHMMSS/`:
+```
+outputs/run_20251230_100457/
+├── best_model.pt          # Model checkpoint
+├── results.json           # Complete results
+├── training.log           # Training logs
+└── test_predictions.npz   # Test predictions
+```
+
+### Results File (`results.json`)
+
+Contains comprehensive training information:
+```json
+{
+  "best_epoch": 45,
+  "best_val_r2": 0.5633,
+  "test_r2": 0.5758,
+  "hyperparameters": {
+    "training": {
+      "batch_size": 64,
+      "learning_rate": 0.0005,
+      "optimizer": "AdamW",
+      "epochs": 100,
+      ...
+    },
+    "model": {...},
+    "data": {...}
+  },
+  "model_architecture": {
+    "total_parameters": 4446017,
+    "trainable_parameters": 4446017,
+    "genetic_encoder": {...},
+    "env_encoder": {...},
+    ...
+  },
+  "history": {
+    "train_loss": [...],
+    "val_r2": [...],
+    ...
+  }
+}
 ```
 
 ## Making Predictions
 
-```python
-# Load trained model
-model = torch.load("results/best_model.pt")
-model.eval()
+### Command Line Interface
 
-# Make predictions
-predictions, targets = trainer.predict(test_loader)
+Basic prediction:
+```bash
+python predict.py --model-path outputs/run_xxx/best_model.pt --data-dir ./Testing_data
+```
+
+Custom output directory:
+```bash
+python predict.py \
+  --model-path outputs/run_xxx/best_model.pt \
+  --data-dir ./Testing_data \
+  --output-dir ./my_predictions
+```
+
+Custom batch size:
+```bash
+python predict.py \
+  --model-path outputs/run_xxx/best_model.pt \
+  --data-dir ./Testing_data \
+  --batch-size 128
+```
+
+### Output Structure
+
+Predictions are saved to `predictions/pred_YYYYMMDD_HHMMSS/`:
+```
+predictions/pred_20251230_102258/
+├── predictions.csv            # Full predictions with sample IDs
+├── submission.csv            # Competition format (Env, Hybrid, Yield_Mg_ha)
+├── evaluation_metrics.json   # Metrics (if targets available)
+├── predictions.npz           # Raw numpy arrays
+└── prediction.log            # Prediction logs
+```
+
+### Programmatic Usage
+
+```python
+import torch
+from predict import load_model, predict
+
+# Load trained model
+model, checkpoint = load_model(model_path, device, logger)
+
+# Model automatically reconstructs architecture from checkpoint
+# Supports: mlp, cnn, transformer, cnn_transformer encoders
+
+# Make predictions with progress bar
+predictions, targets = predict(model, test_loader, device, logger)
 
 # Evaluate
-from openge.utils import calculate_rmse, calculate_r2
-rmse = calculate_rmse(targets, predictions)
-r2 = calculate_r2(targets, predictions)
+if targets_available:
+    from openge.utils.metrics import calculate_rmse, calculate_r2
+    rmse = calculate_rmse(targets.flatten(), predictions.flatten())
+    r2 = calculate_r2(targets.flatten(), predictions.flatten())
+    print(f"RMSE: {rmse:.4f}, R²: {r2:.4f}")
 ```
+
+### Evaluation Metrics
+
+When target values are available (e.g., `7_Testing_Observed_Values.csv`), the script automatically calculates:
+- **RMSE**: Root Mean Squared Error
+- **R²**: Coefficient of Determination
+- **MAE**: Mean Absolute Error
+- **Correlation**: Pearson correlation coefficient
 
 ## Interpretability Analysis
 
@@ -274,17 +500,19 @@ class CustomFusion(nn.Module):
 
 ## Requirements
 
+Core dependencies:
 - Python >= 3.8
 - PyTorch >= 1.9.0
 - NumPy >= 1.20.0
 - Pandas >= 1.3.0
 - scikit-learn >= 1.0.0
 - PyYAML >= 5.4.0
-- matplotlib >= 3.4.0
+- tqdm >= 4.62.0 (progress bars)
 
-Optional:
-- SHAP >= 0.40.0 (for SHAP explanations)
-- Captum >= 0.4.0 (for advanced interpretability)
+Optional for interpretability:
+- SHAP >= 0.40.0 (SHAP explanations)
+- Captum >= 0.4.0 (advanced interpretability)
+- matplotlib >= 3.4.0 (visualization)
 
 ## Testing
 
@@ -330,6 +558,17 @@ This library was developed for multi-crop genomic prediction research. Special t
 
 ---
 
-**Last Updated**: December 2024
-**Version**: 0.1.0
+**Last Updated**: December 30, 2025
+**Version**: 0.2.0
 **Status**: Active Development
+
+## Recent Updates
+
+### v0.2.0 (December 2025)
+- ✨ Added CNN+Transformer hybrid encoder
+- ✨ Enhanced training pipeline with progress bars (tqdm)
+- ✨ Improved output structure with timestamped directories
+- ✨ Added hyperparameters and model architecture to results
+- ✨ Better predict.py with automatic architecture reconstruction
+- 🐛 Fixed configuration parameter handling
+- 📝 Updated documentation and examples
