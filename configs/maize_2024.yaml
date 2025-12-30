@@ -25,7 +25,7 @@ model:
   # Head
   head_hidden_dims: [64, 32]
   
-  dropout: 0.2                           # Higher dropout for regularization
+  dropout: 0.5                           # Higher dropout for regularization
 
 # =============================================================================
 # Training Configuration

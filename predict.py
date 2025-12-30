@@ -19,6 +19,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from openge.core import Config
 from openge.data import GxEDataLoader, Preprocessor, GxEDataset
@@ -96,6 +97,8 @@ def build_model_from_config(config: dict, data_info: dict, device: str, logger: 
     
     # Build genetic encoder
     genetic_encoder_type = model_config.get('genetic_encoder', 'mlp')
+    logger.info(f"Building genetic encoder: {genetic_encoder_type}")
+    
     if genetic_encoder_type == 'transformer':
         genetic_encoder = TransformerEncoder(
             input_dim=n_markers,
@@ -108,10 +111,29 @@ def build_model_from_config(config: dict, data_info: dict, device: str, logger: 
         genetic_encoder = CNNEncoder(
             input_dim=n_markers,
             output_dim=genetic_hidden_dim,
-            n_filters=model_config.get('genetic_n_filters', 64),
+            hidden_channels=model_config.get('genetic_hidden_channels', [64, 128, 256]),
             kernel_sizes=model_config.get('genetic_kernel_sizes', [7, 5, 3])
         )
-    else:  # MLP
+    elif genetic_encoder_type == 'cnn_transformer':
+        # Hybrid CNN + Transformer encoder
+        # CNN output dimension (intermediate dimension)
+        cnn_output_dim = model_config.get('cnn_output_dim', genetic_hidden_dim)
+        
+        cnn_encoder = CNNEncoder(
+            input_dim=n_markers,
+            output_dim=cnn_output_dim,
+            hidden_channels=model_config.get('genetic_hidden_channels', [64, 128, 256]),
+            kernel_sizes=model_config.get('genetic_kernel_sizes', [7, 5, 3])
+        )
+        transformer_encoder = TransformerEncoder(
+            input_dim=cnn_output_dim,
+            output_dim=genetic_hidden_dim,
+            n_heads=model_config.get('genetic_n_heads', 8),
+            n_layers=model_config.get('genetic_n_layers', 2),
+            dropout=model_config.get('dropout', 0.1)
+        )
+        genetic_encoder = nn.Sequential(cnn_encoder, transformer_encoder)
+    else:  # MLP (default)
         genetic_encoder = MLPEncoder(
             input_dim=n_markers,
             hidden_dims=model_config.get('genetic_hidden_dims', [512, 256]),
@@ -315,8 +337,17 @@ def predict(model, data_loader, device: str, logger: logging.Logger):
     all_predictions = []
     all_targets = []
     
+    # Create progress bar
+    pbar = tqdm(
+        data_loader,
+        desc="Predicting",
+        leave=True,
+        ncols=100,
+        bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]'
+    )
+    
     with torch.no_grad():
-        for batch_idx, (genetic, env, target) in enumerate(data_loader):
+        for genetic, env, target in pbar:
             genetic = genetic.to(device)
             env = env.to(device)
             
@@ -328,9 +359,6 @@ def predict(model, data_loader, device: str, logger: logging.Logger):
             
             all_predictions.append(output.cpu().numpy())
             all_targets.append(target.numpy())
-            
-            if (batch_idx + 1) % 20 == 0:
-                logger.debug(f"Processed batch {batch_idx + 1}/{len(data_loader)}")
     
     predictions = np.vstack(all_predictions)
     targets = np.vstack(all_targets)
@@ -434,9 +462,10 @@ def save_predictions(
 
 def main(args):
     """Main prediction function."""
-    # Setup output directory
+    # Setup output directory with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = Path(args.output_dir)
+    base_output_dir = Path(args.output_dir)
+    output_dir = base_output_dir / f"pred_{timestamp}"
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Setup logging

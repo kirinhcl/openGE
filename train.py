@@ -19,6 +19,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 
 from openge.core import Config, Trainer
 from openge.data import GxEDataLoader, Preprocessor, GxEDataset
@@ -209,9 +210,29 @@ def build_model(config: dict, data_info: dict, device: str, logger: logging.Logg
         genetic_encoder = CNNEncoder(
             input_dim=n_markers,
             output_dim=genetic_hidden_dim,
-            n_filters=model_config.get('genetic_n_filters', 64),
-            kernel_sizes=model_config.get('genetic_kernel_sizes', [7, 5, 3])
+            hidden_channels=model_config.get('genetic_hidden_channels', [64, 128, 256]),
+            kernel_sizes=model_config.get('genetic_kernel_sizes', [7, 5, 3]),
+            dropout=model_config.get('dropout', 0.1)
         )
+    elif genetic_encoder_type == 'cnn_transformer':
+        # Hybrid CNN + Transformer: CNN for local patterns, Transformer for global
+        cnn_output_dim = model_config.get('cnn_output_dim', 512)
+        cnn_encoder = CNNEncoder(
+            input_dim=n_markers,
+            output_dim=cnn_output_dim,
+            hidden_channels=model_config.get('genetic_hidden_channels', [64, 128, 256]),
+            kernel_sizes=model_config.get('genetic_kernel_sizes', [7, 5, 3]),
+            dropout=model_config.get('dropout', 0.1)
+        )
+        transformer_encoder = TransformerEncoder(
+            input_dim=cnn_output_dim,
+            output_dim=genetic_hidden_dim,
+            n_heads=model_config.get('genetic_n_heads', 8),
+            n_layers=model_config.get('genetic_n_layers', 2),
+            dropout=model_config.get('dropout', 0.1)
+        )
+        # Create sequential wrapper
+        genetic_encoder = nn.Sequential(cnn_encoder, transformer_encoder)
     else:  # MLP
         genetic_encoder = MLPEncoder(
             input_dim=n_markers,
@@ -266,13 +287,22 @@ def build_model(config: dict, data_info: dict, device: str, logger: logging.Logg
     return model
 
 
-def train_epoch(model, train_loader, criterion, optimizer, device, epoch, logger):
+def train_epoch(model, train_loader, criterion, optimizer, device, epoch, logger, n_epochs):
     """Train for one epoch."""
     model.train()
     total_loss = 0
     n_batches = 0
     
-    for batch_idx, (genetic, env, target) in enumerate(train_loader):
+    # Create progress bar
+    pbar = tqdm(
+        train_loader, 
+        desc=f"Epoch {epoch:3d}/{n_epochs}",
+        leave=True,
+        ncols=100,
+        bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]'
+    )
+    
+    for batch_idx, (genetic, env, target) in enumerate(pbar):
         genetic = genetic.to(device)
         env = env.to(device)
         target = target.to(device)
@@ -299,8 +329,8 @@ def train_epoch(model, train_loader, criterion, optimizer, device, epoch, logger
         total_loss += loss.item()
         n_batches += 1
         
-        if (batch_idx + 1) % 50 == 0:
-            logger.debug(f"Epoch {epoch}, Batch {batch_idx + 1}/{len(train_loader)}, Loss: {loss.item():.4f}")
+        # Update progress bar
+        pbar.set_postfix({'loss': f'{loss.item():.4f}', 'avg_loss': f'{total_loss/n_batches:.4f}'})
     
     return total_loss / n_batches
 
@@ -430,7 +460,8 @@ def main(args):
     model = build_model(config, data_info, device, logger)
     
     # Setup training
-    criterion = nn.MSELoss()
+    #criterion = nn.MSELoss()
+    criterion = nn.HuberLoss(delta=1.0)
     
     learning_rate = config.get('training', {}).get('learning_rate', 0.001)
     weight_decay = config.get('training', {}).get('weight_decay', 0.0001)
@@ -461,7 +492,7 @@ def main(args):
     
     for epoch in range(1, n_epochs + 1):
         # Train
-        train_loss = train_epoch(model, train_loader, criterion, optimizer, device, epoch, logger)
+        train_loss = train_epoch(model, train_loader, criterion, optimizer, device, epoch, logger, n_epochs)
         
         # Validate
         val_loss, val_r2, val_rmse, _, _ = validate(model, val_loader, criterion, device)
@@ -475,12 +506,8 @@ def main(args):
         history['val_r2'].append(val_r2)
         history['val_rmse'].append(val_rmse)
         
-        # Log progress
-        logger.info(f"Epoch {epoch:3d}/{n_epochs} | "
-                   f"Train Loss: {train_loss:.4f} | "
-                   f"Val Loss: {val_loss:.4f} | "
-                   f"Val R²: {val_r2:.4f} | "
-                   f"Val RMSE: {val_rmse:.4f}")
+        # Log progress (compact format after progress bar)
+        print(f"         → Val Loss: {val_loss:.4f} | Val R²: {val_r2:.4f} | Val RMSE: {val_rmse:.4f}")
         
         # Early stopping check
         if val_loss < best_val_loss:
@@ -521,7 +548,49 @@ def main(args):
     logger.info(f"  - R²: {test_r2:.4f}")
     logger.info(f"  - RMSE: {test_rmse:.4f}")
     
-    # Save final results
+    # Collect model architecture information
+    n_params = sum(p.numel() for p in model.parameters())
+    n_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    
+    def get_layer_info(module, name):
+        """Get layer information recursively."""
+        info = {'type': module.__class__.__name__}
+        if hasattr(module, 'in_features') and hasattr(module, 'out_features'):
+            info['in_features'] = module.in_features
+            info['out_features'] = module.out_features
+        elif hasattr(module, 'input_dim') and hasattr(module, 'output_dim'):
+            info['input_dim'] = module.input_dim
+            info['output_dim'] = module.output_dim
+        return info
+    
+    model_architecture = {
+        'total_parameters': n_params,
+        'trainable_parameters': n_trainable,
+        'genetic_encoder': get_layer_info(model.genetic_encoder, 'genetic_encoder'),
+        'env_encoder': get_layer_info(model.env_encoder, 'env_encoder'),
+        'fusion_layer': get_layer_info(model.fusion_layer, 'fusion_layer'),
+        'prediction_head': get_layer_info(model.prediction_head, 'prediction_head'),
+    }
+    
+    # Save final results with hyperparameters
+    hyperparameters = {
+        'training': {
+            'batch_size': batch_size,
+            'learning_rate': learning_rate,
+            'weight_decay': weight_decay,
+            'epochs': n_epochs,
+            'early_stopping_patience': early_stopping_patience,
+            'train_ratio': train_ratio,
+            'val_ratio': val_ratio,
+            'optimizer': 'AdamW',
+            'scheduler': 'ReduceLROnPlateau',
+            'loss_function': 'MSELoss'
+        },
+        'model': config.get('model', {}),
+        'data': config.get('data', {}),
+        'device': device
+    }
+    
     results = {
         'best_epoch': checkpoint['epoch'],
         'best_val_loss': float(best_val_loss),
@@ -529,6 +598,8 @@ def main(args):
         'test_loss': float(test_loss),
         'test_r2': float(test_r2),
         'test_rmse': float(test_rmse),
+        'hyperparameters': hyperparameters,
+        'model_architecture': model_architecture,
         'data_info': {k: v for k, v in data_info.items() if k not in ['marker_names', 'env_feature_names']},
         'config': config,
         'history': {k: [float(v) for v in vals] for k, vals in history.items()}

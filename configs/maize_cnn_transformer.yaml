@@ -1,0 +1,68 @@
+# Maize Crop Configuration - CNN + Transformer Hybrid Encoder
+# CNN extracts local patterns, Transformer captures global SNP interactions
+#
+# Usage: python train.py --config configs/maize_cnn_transformer.yaml --data-dir ./Training_data
+
+crop: "maize"
+year: 2024
+
+# =============================================================================
+# Model Architecture - Hybrid CNN + Transformer
+# =============================================================================
+model:
+  # Hybrid encoder: CNN → Transformer
+  # CNN: extracts local genomic patterns (linkage, haplotype blocks)
+  # Transformer: models long-range epistatic interactions
+  genetic_encoder: "cnn_transformer"
+  
+  # CNN stage parameters
+  genetic_hidden_channels: [64, 128, 256]  # Channel sizes for conv layers
+  genetic_kernel_sizes: [7, 5, 3]          # Multi-scale kernels
+  cnn_output_dim: 512                      # CNN output dimension (Transformer input)
+  
+  # Transformer stage parameters
+  genetic_hidden_dim: 256           # Final output dimension
+  genetic_n_heads: 8                # Multi-head attention
+  genetic_n_layers: 2               # Transformer layers
+  
+  # Environment encoder (MLP)
+  env_hidden_dim: 128
+  env_hidden_dims: [256, 128]
+  
+  # Fusion - attention-based G×E interaction
+  fusion: "attention"
+  
+  # Prediction head
+  head_hidden_dims: [128, 64]
+  
+  dropout: 0.15                     # Moderate dropout
+
+# =============================================================================
+# Training Configuration
+# =============================================================================
+training:
+  batch_size: 16                    # Balance between memory and speed
+  epochs: 100
+  learning_rate: 0.0003             # Lower LR for complex model
+  weight_decay: 0.0001
+  early_stopping_patience: 20
+  
+  train_ratio: 0.7
+  val_ratio: 0.15
+
+# =============================================================================
+# Data Configuration
+# =============================================================================
+data:
+  target_traits:
+    - "Yield_Mg_ha"
+  
+  genetic_missing_threshold: 0.5
+  normalization: "standard"
+
+# =============================================================================
+# Logging
+# =============================================================================
+logging:
+  level: "INFO"
+  save_dir: "./outputs/maize_cnn_transformer"
