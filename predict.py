@@ -24,7 +24,7 @@ from tqdm import tqdm
 from openge.core import Config
 from openge.data import GxEDataLoader, Preprocessor, GxEDataset
 from openge.models import (
-    TransformerEncoder, MLPEncoder, CNNEncoder,
+    TransformerEncoder, MLPEncoder, CNNEncoder, TemporalEncoder,
     AttentionFusion, ConcatFusion,
     RegressionHead, GxEModel
 )
@@ -142,12 +142,37 @@ def build_model_from_config(config: dict, data_info: dict, device: str, logger: 
         )
     
     # Build environment encoder
-    env_encoder = MLPEncoder(
-        input_dim=n_env_features,
-        hidden_dims=model_config.get('env_hidden_dims', [128, 64]),
-        output_dim=env_hidden_dim,
-        dropout=model_config.get('dropout', 0.1)
-    )
+    env_is_3d = data_info.get('env_is_3d', False)
+    n_timesteps = data_info.get('n_timesteps', None)
+    env_encoder_type = model_config.get('env_encoder', 'mlp')
+    
+    if env_is_3d and n_timesteps is not None:
+        # Use TemporalEncoder for 3D weather time series
+        logger.info(f"Using TemporalEncoder for 3D environment data ({n_timesteps} timesteps)")
+        env_encoder = TemporalEncoder(
+            n_features=n_env_features,
+            n_timesteps=n_timesteps,
+            output_dim=env_hidden_dim,
+            hidden_dim=model_config.get('env_temporal_hidden_dim', 128),
+            n_heads=model_config.get('env_n_heads', 4),
+            n_layers=model_config.get('env_n_layers', 2),
+            dropout=model_config.get('dropout', 0.1)
+        )
+    elif env_encoder_type == 'transformer':
+        env_encoder = TransformerEncoder(
+            input_dim=n_env_features,
+            output_dim=env_hidden_dim,
+            n_heads=model_config.get('env_n_heads', 4),
+            n_layers=model_config.get('env_n_layers', 2),
+            dropout=model_config.get('dropout', 0.1)
+        )
+    else:  # MLP (default for 2D)
+        env_encoder = MLPEncoder(
+            input_dim=n_env_features,
+            hidden_dims=model_config.get('env_hidden_dims', [128, 64]),
+            output_dim=env_hidden_dim,
+            dropout=model_config.get('dropout', 0.1)
+        )
     
     # Build fusion layer
     fusion_type = model_config.get('fusion', 'attention')
@@ -172,11 +197,18 @@ def build_model_from_config(config: dict, data_info: dict, device: str, logger: 
         hidden_dims=model_config.get('head_hidden_dims', [64])
     )
     
+    # Residual connections
+    use_residual = model_config.get('use_residual', False)
+    
     model = GxEModel(
         genetic_encoder=genetic_encoder,
         env_encoder=env_encoder,
         fusion_layer=fusion_layer,
         prediction_head=head,
+        use_residual=use_residual,
+        genetic_dim=genetic_hidden_dim,
+        env_dim=env_hidden_dim,
+        fused_dim=head_input_dim,
     ).to(device)
     
     return model
@@ -237,21 +269,65 @@ def load_test_data(data_dir: str, checkpoint: dict, logger: logging.Logger):
     
     # 2. Load test environment data
     logger.info("Loading test environment data...")
-    try:
-        env_data, env_ids, env_features = data_loader.load_environment(
-            ec_file=str(ec_file),
-            soil_file=str(soil_file) if soil_file.exists() else None,
-            handle_missing='drop',
-            use_3d=False
-        )
-    except Exception as e:
-        logger.warning(f"Failed to load soil data, using EC only: {e}")
-        env_data, env_ids, env_features = data_loader.load_environment(
-            ec_file=str(ec_file),
-            handle_missing='drop',
-            use_3d=False
-        )
-    logger.info(f"Environment data shape: {env_data.shape}")
+    
+    # Check if model was trained with 3D weather data
+    env_is_3d_expected = data_info.get('env_is_3d', False)
+    weather_file = data_path / "4_Testing_Weather_Data_2024_seasons_only.csv"
+    training_feature_names = data_info.get('env_feature_names', None)
+    
+    if env_is_3d_expected and weather_file.exists():
+        # Load 3D weather data to match training
+        logger.info("Model expects 3D weather data, loading weather time series...")
+        if training_feature_names:
+            logger.info(f"Using {len(training_feature_names)} features from training: {training_feature_names[:3]}...")
+        try:
+            env_data, env_ids, env_features = data_loader.load_environment(
+                weather_file=str(weather_file),
+                ec_file=str(ec_file),
+                soil_file=str(soil_file) if soil_file.exists() else None,
+                handle_missing='mean',  # Use mean to avoid dropping columns
+                use_3d=True,
+                required_features=training_feature_names  # Pass training features to ensure consistency
+            )
+            
+            # Check if test data features match training data
+            expected_features = data_info.get('n_env_features', None)
+            actual_features = env_data.shape[-1]
+            if expected_features and actual_features != expected_features:
+                logger.warning(f"Feature mismatch: model expects {expected_features} features, "
+                              f"test data has {actual_features}")
+                logger.warning("This may cause errors. Consider using 2D EC data instead.")
+        except Exception as e:
+            logger.warning(f"Failed to load 3D weather data: {e}")
+            logger.warning("Falling back to 2D EC data (may cause dimension mismatch)")
+            env_data, env_ids, env_features = data_loader.load_environment(
+                ec_file=str(ec_file),
+                soil_file=str(soil_file) if soil_file.exists() else None,
+                handle_missing='drop',
+                use_3d=False
+            )
+    else:
+        # Load 2D environment data
+        try:
+            env_data, env_ids, env_features = data_loader.load_environment(
+                ec_file=str(ec_file),
+                soil_file=str(soil_file) if soil_file.exists() else None,
+                handle_missing='drop',
+                use_3d=False
+            )
+        except Exception as e:
+            logger.warning(f"Failed to load soil data, using EC only: {e}")
+            env_data, env_ids, env_features = data_loader.load_environment(
+                ec_file=str(ec_file),
+                handle_missing='drop',
+                use_3d=False
+            )
+    
+    env_is_3d = len(env_data.shape) == 3
+    if env_is_3d:
+        logger.info(f"Environment data shape: {env_data.shape} (3D)")
+    else:
+        logger.info(f"Environment data shape: {env_data.shape} (2D)")
     
     # 3. Load test phenotype data (or submission template)
     logger.info("Loading test sample IDs...")
@@ -281,7 +357,14 @@ def load_test_data(data_dir: str, checkpoint: dict, logger: logging.Logger):
     
     # Normalize environment data
     env_preprocessor = Preprocessor(method='standard')
-    aligned_env = env_preprocessor.normalize(aligned_env, fit=True)
+    if env_is_3d:
+        # For 3D data, reshape to 2D, normalize, then reshape back
+        n_samples, n_timesteps, n_features = aligned_env.shape
+        aligned_env_2d = aligned_env.reshape(-1, n_features)
+        aligned_env_2d = env_preprocessor.normalize(aligned_env_2d, fit=True)
+        aligned_env = aligned_env_2d.reshape(n_samples, n_timesteps, n_features)
+    else:
+        aligned_env = env_preprocessor.normalize(aligned_env, fit=True)
     
     # Store original phenotype values for de-normalization
     original_pheno = aligned_pheno.copy()

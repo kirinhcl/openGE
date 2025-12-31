@@ -923,6 +923,7 @@ class TemporalEncoder(nn.Module):
             Encoded representation [batch_size, output_dim]
         """
         batch_size = x.size(0)
+        actual_timesteps = x.size(1)
         
         # Transpose for Conv1d: [batch, n_features, n_timesteps]
         x = x.transpose(1, 2)
@@ -939,9 +940,14 @@ class TemporalEncoder(nn.Module):
         # Apply temporal attention
         x = self.temporal_attention(x)
         
-        # Weighted aggregation across time
-        weights = F.softmax(self.aggregation_weights, dim=1)
-        x = (x * weights).sum(dim=1)  # [batch, hidden_dim]
+        # Adaptive weighted aggregation across time (handle variable timesteps)
+        if actual_timesteps == self.n_timesteps:
+            # Use learned weights if timesteps match
+            weights = F.softmax(self.aggregation_weights, dim=1)
+            x = (x * weights).sum(dim=1)  # [batch, hidden_dim]
+        else:
+            # Use mean pooling for different timesteps
+            x = x.mean(dim=1)  # [batch, hidden_dim]
         
         # Output projection
         x = self.output_projection(x)

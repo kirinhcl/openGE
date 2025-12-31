@@ -32,6 +32,9 @@ model:
   # Fusion - attention-based G×E interaction
   fusion: "attention"
   
+  # Residual connections: add G and E to GxE
+  use_residual: true
+  
   # Prediction head
   head_hidden_dims: [128, 64]
   

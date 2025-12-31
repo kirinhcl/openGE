@@ -33,6 +33,10 @@ class GxEModel(nn.Module):
         prediction_head: nn.Module,
         use_gxe_interaction: bool = True,
         static_encoder: Optional[nn.Module] = None,
+        use_residual: bool = False,
+        genetic_dim: Optional[int] = None,
+        env_dim: Optional[int] = None,
+        fused_dim: Optional[int] = None,
     ):
         """
         Initialize G×E model.
@@ -44,6 +48,10 @@ class GxEModel(nn.Module):
             prediction_head: Head for final prediction
             use_gxe_interaction: Whether to explicitly model G×E interactions
             static_encoder: Optional encoder for static features (soil, EC)
+            use_residual: Whether to add G and E as residual connections to GxE
+            genetic_dim: Dimension of genetic representation (for residual projection)
+            env_dim: Dimension of environment representation (for residual projection)
+            fused_dim: Dimension of fused representation (for residual projection)
         """
         super().__init__()
         self.genetic_encoder = genetic_encoder
@@ -52,6 +60,19 @@ class GxEModel(nn.Module):
         self.prediction_head = prediction_head
         self.use_gxe_interaction = use_gxe_interaction
         self.static_encoder = static_encoder
+        self.use_residual = use_residual
+        
+        # Residual projection layers for G and E
+        # Projects G and E to same dimension as fused representation
+        if use_residual and genetic_dim is not None and fused_dim is not None:
+            self.genetic_residual_proj = nn.Linear(genetic_dim, fused_dim) if genetic_dim != fused_dim else nn.Identity()
+            self.env_residual_proj = nn.Linear(env_dim, fused_dim) if env_dim != fused_dim else nn.Identity()
+            # Learnable weights for residual contributions
+            self.residual_gate = nn.Parameter(torch.ones(3) / 3)  # [gxe_weight, g_weight, e_weight]
+        else:
+            self.genetic_residual_proj = None
+            self.env_residual_proj = None
+            self.residual_gate = None
         
         # G×E interaction term if enabled
         if use_gxe_interaction:
@@ -108,6 +129,20 @@ class GxEModel(nn.Module):
             else:
                 fused_repr = fused_result
         
+        # Apply residual connections: fused = w1*GxE + w2*G + w3*E
+        if self.use_residual and self.genetic_residual_proj is not None:
+            # Normalize gate weights with softmax
+            gate_weights = F.softmax(self.residual_gate, dim=0)
+            
+            # Project G and E to fused dimension
+            genetic_proj = self.genetic_residual_proj(genetic_repr)
+            env_proj = self.env_residual_proj(env_repr)
+            
+            # Combine with learnable weights
+            fused_repr = (gate_weights[0] * fused_repr + 
+                         gate_weights[1] * genetic_proj + 
+                         gate_weights[2] * env_proj)
+        
         # Make predictions
         predictions = self.prediction_head(fused_repr)
         
@@ -120,6 +155,15 @@ class GxEModel(nn.Module):
             }
             if static_repr is not None:
                 intermediates["static_repr"] = static_repr
+            
+            # Add residual gate weights for interpretability
+            if self.use_residual and self.residual_gate is not None:
+                gate_weights = F.softmax(self.residual_gate, dim=0)
+                intermediates["residual_weights"] = {
+                    "gxe": gate_weights[0].item(),
+                    "genetic": gate_weights[1].item(),
+                    "env": gate_weights[2].item(),
+                }
             
             return predictions, intermediates
         
@@ -151,6 +195,22 @@ class GxEModel(nn.Module):
         if hasattr(self.fusion_layer, 'attention_weights_g2e'):
             return self.fusion_layer.attention_weights_g2e
         return None
+    
+    def get_residual_weights(self) -> Optional[Dict[str, float]]:
+        """
+        Get residual connection weights (G, E, GxE contributions).
+        
+        Returns:
+            Dictionary with 'gxe', 'genetic', 'env' weights or None
+        """
+        if self.use_residual and self.residual_gate is not None:
+            gate_weights = F.softmax(self.residual_gate, dim=0)
+            return {
+                "gxe": gate_weights[0].item(),
+                "genetic": gate_weights[1].item(),
+                "env": gate_weights[2].item(),
+            }
+        return None
 
 
 class GxEModelBuilder:
@@ -169,6 +229,7 @@ class GxEModelBuilder:
             'n_heads': 8,
             'n_layers': 4,
             'dropout': 0.1,
+            'use_residual': False,  # Add G and E as residual to GxE
         }
     
     def set_genetic_encoder(
@@ -340,7 +401,11 @@ class GxEModelBuilder:
             env_encoder=env_encoder,
             fusion_layer=fusion_layer,
             prediction_head=prediction_head,
-            use_gxe_interaction=config.get('use_gxe_interaction', True)
+            use_gxe_interaction=config.get('use_gxe_interaction', True),
+            use_residual=config.get('use_residual', False),
+            genetic_dim=embedding_dim,
+            env_dim=embedding_dim,
+            fused_dim=embedding_dim,
         )
 
 
@@ -353,7 +418,8 @@ def create_gxe_model(
     env_encoder: str = 'mlp',
     fusion: str = 'attention',
     embedding_dim: int = 256,
-    dropout: float = 0.1
+    dropout: float = 0.1,
+    use_residual: bool = False,
 ) -> GxEModel:
     """
     Convenience function to create a GxEModel with common configurations.
@@ -368,6 +434,7 @@ def create_gxe_model(
         fusion: Type of fusion ('concat', 'attention', 'gating', 'bilinear')
         embedding_dim: Embedding dimension
         dropout: Dropout rate
+        use_residual: Whether to add G and E as residual connections to GxE
         
     Returns:
         Configured GxEModel
@@ -383,6 +450,7 @@ def create_gxe_model(
     builder.set_head('regression', n_traits)
     builder.config['embedding_dim'] = embedding_dim
     builder.config['dropout'] = dropout
+    builder.config['use_residual'] = use_residual
     
     return builder.build()
 

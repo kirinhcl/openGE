@@ -204,7 +204,8 @@ class GxEDataLoader:
                         ec_file: Optional[str] = None,
                         use_3d: bool = True,
                         handle_missing: str = 'drop',
-                        combine_method: str = 'concat') -> Tuple[np.ndarray, List[str], List[str]]:
+                        combine_method: str = 'concat',
+                        required_features: Optional[List[str]] = None) -> Tuple[np.ndarray, List[str], List[str]]:
         """
         Load environmental data from multiple sources.
         
@@ -215,6 +216,7 @@ class GxEDataLoader:
             use_3d: If True, load weather as 3D temporal data; if False, aggregate to static
             handle_missing: How to handle missing values ('drop', 'mean', 'zero')
             combine_method: How to combine multiple data sources ('concat', 'separate')
+            required_features: List of feature names that must be present (for inference consistency)
             
         Returns:
             tuple: (environment_matrix, sample_ids, feature_names)
@@ -240,9 +242,12 @@ class GxEDataLoader:
         if weather_file is not None:
             print(f"\n📌 加载天气数据: {weather_file}")
             if use_3d:
+                # Use 'mean' for missing values if required_features specified to avoid dropping columns
+                missing_method = 'mean' if required_features else handle_missing
                 weather_data, weather_ids, weather_features = self.environment_loader.load_weather_data_3d(
                     weather_file,
-                    handle_missing=handle_missing
+                    handle_missing=missing_method,
+                    required_features=required_features
                 )
                 feature_info['weather'] = {'features': weather_features, 'shape': weather_data.shape, 'is_3d': True}
                 for i, sid in enumerate(weather_ids):
