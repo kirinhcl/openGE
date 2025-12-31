@@ -272,12 +272,19 @@ def build_model(config: dict, data_info: dict, device: str, logger: logging.Logg
         hidden_dims=model_config.get('head_hidden_dims', [64])
     )
     
+    # Residual connections: add G and E to GxE
+    use_residual = model_config.get('use_residual', False)
+    
     # Combine into G×E model
     model = GxEModel(
         genetic_encoder=genetic_encoder,
         env_encoder=env_encoder,
         fusion_layer=fusion_layer,
         prediction_head=head,
+        use_residual=use_residual,
+        genetic_dim=genetic_hidden_dim,
+        env_dim=env_hidden_dim,
+        fused_dim=head_input_dim,
     ).to(device)
     
     n_params = sum(p.numel() for p in model.parameters())

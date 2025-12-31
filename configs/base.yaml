@@ -24,6 +24,10 @@ model:
   fusion: "attention"
   fusion_dim: 128                   # For concat fusion only
   
+  # Residual connections: add G and E representations to GxE
+  # Formula: output = w1*GxE + w2*G + w3*E (learnable weights)
+  use_residual: false
+  
   # Prediction head
   head_hidden_dims: [64]            # Hidden layers before output
   
