@@ -658,7 +658,8 @@ class EnvironmentLoader:
                             sample_col: str = "Env",
                             date_col: str = "Date",
                             handle_missing: str = 'drop',
-                            missing_threshold: float = 0.5) -> Tuple[np.ndarray, List[str], List[str]]:
+                            missing_threshold: float = 0.5,
+                            required_features: Optional[List[str]] = None) -> Tuple[np.ndarray, List[str], List[str]]:
         """
         加载天气数据并返回 3D 数组
         
@@ -668,20 +669,32 @@ class EnvironmentLoader:
             date_col: 日期列名
             handle_missing: 缺失值处理方法
             missing_threshold: 缺失率阈值
+            required_features: 必须包含的特征列表（用于推理时保持一致性）
         
         Returns:
             tuple: (weather_3d, sample_ids, feature_names)
                    weather_3d 形状: (n_samples, n_timesteps, n_features)
         """
         # 先加载为 DataFrame（保留时间序列）
-        df_weather = self.load_weather_data(
-            filepath=filepath,
-            reshape_to_temporal=True,  # 保留时间序列
-            sample_col=sample_col,
-            date_col=date_col,
-            handle_missing=handle_missing,
-            missing_threshold=missing_threshold
-        )
+        # If required_features specified, use 'mean' instead of 'drop' to keep all columns
+        if required_features:
+            df_weather = self.load_weather_data(
+                filepath=filepath,
+                reshape_to_temporal=True,
+                sample_col=sample_col,
+                date_col=date_col,
+                handle_missing='mean',  # Don't drop columns when we need specific features
+                missing_threshold=1.0   # Don't drop any columns
+            )
+        else:
+            df_weather = self.load_weather_data(
+                filepath=filepath,
+                reshape_to_temporal=True,  # 保留时间序列
+                sample_col=sample_col,
+                date_col=date_col,
+                handle_missing=handle_missing,
+                missing_threshold=missing_threshold
+            )
         
         # 转换为 3D 数组
         weather_3d, sample_ids, feature_names = self.convert_to_3d_array(
@@ -689,5 +702,22 @@ class EnvironmentLoader:
             sample_col=sample_col, 
             date_col=date_col
         )
+        
+        # Reorder features to match required_features if specified
+        if required_features:
+            available_features = set(feature_names)
+            required_set = set(required_features)
+            
+            if not required_set.issubset(available_features):
+                missing = required_set - available_features
+                print(f"⚠️ 缺少必需的特征: {missing}")
+                raise ValueError(f"Required features not available: {missing}")
+            
+            if feature_names != required_features:
+                print(f"📌 重新排序特征以匹配训练顺序...")
+                feature_indices = [feature_names.index(f) for f in required_features]
+                weather_3d = weather_3d[:, :, feature_indices]
+                feature_names = required_features.copy()
+                print(f"   ✓ 特征已重新排序: {len(feature_names)} 个特征")
         
         return weather_3d, sample_ids, feature_names

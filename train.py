@@ -155,7 +155,15 @@ def load_data(config: dict, data_dir: str, logger: logging.Logger):
     
     # Normalize environment data
     env_preprocessor = Preprocessor(method='standard')
-    aligned_env = env_preprocessor.normalize(aligned_env, fit=True)
+    if env_is_3d:
+        # For 3D data (samples, timesteps, features), normalize along feature dimension
+        # Reshape to 2D, normalize, then reshape back
+        n_samples, n_timesteps, n_features = aligned_env.shape
+        aligned_env_2d = aligned_env.reshape(-1, n_features)
+        aligned_env_2d = env_preprocessor.normalize(aligned_env_2d, fit=True)
+        aligned_env = aligned_env_2d.reshape(n_samples, n_timesteps, n_features)
+    else:
+        aligned_env = env_preprocessor.normalize(aligned_env, fit=True)
     
     # Normalize phenotype data (targets) - optional but can help training
     pheno_preprocessor = Preprocessor(method='standard')
