@@ -24,7 +24,7 @@ from tqdm import tqdm
 from openge.core import Config, Trainer
 from openge.data import GxEDataLoader, Preprocessor, GxEDataset
 from openge.models import (
-    TransformerEncoder, MLPEncoder, CNNEncoder,
+    TransformerEncoder, MLPEncoder, CNNEncoder, TemporalEncoder,
     AttentionFusion, ConcatFusion,
     RegressionHead, ClassificationHead,
     GxEModel
@@ -85,29 +85,43 @@ def load_data(config: dict, data_dir: str, logger: logging.Logger):
     genetic_data, genetic_ids, marker_names = data_loader.load_genetic(
         filepath=str(genotype_file),
         sample_col='<Marker>',
-        handle_missing='mean',
+        handle_missing='zero',
         missing_threshold=config.get('data', {}).get('genetic_missing_threshold', 0.5),
         encoding='keep'
     )
     logger.info(f"Genetic data shape: {genetic_data.shape}")
     
-    # 2. Load environment data (EC data is simpler and more reliable)
+    # 2. Load environment data
     logger.info("Loading environment data...")
+    
+    # Check if we should use 3D weather data
+    use_weather_3d = config.get('data', {}).get('use_weather_3d', False)
+    weather_file_to_use = weather_file if weather_file.exists() else None
+    
     try:
         env_data, env_ids, env_features = data_loader.load_environment(
+            weather_file=str(weather_file_to_use) if weather_file_to_use and use_weather_3d else None,
             ec_file=str(ec_file),
             soil_file=str(soil_file) if soil_file.exists() else None,
             handle_missing='drop',
-            use_3d=False  # Use 2D static features for simplicity
+            use_3d=use_weather_3d
         )
     except Exception as e:
-        logger.warning(f"Failed to load soil data, using EC only: {e}")
+        logger.warning(f"Failed to load environment data with all sources: {e}")
+        # Fallback to EC only
         env_data, env_ids, env_features = data_loader.load_environment(
             ec_file=str(ec_file),
             handle_missing='drop',
             use_3d=False
         )
-    logger.info(f"Environment data shape: {env_data.shape}")
+        use_weather_3d = False
+    
+    # Check if we got 3D data (weather time series)
+    env_is_3d = len(env_data.shape) == 3
+    if env_is_3d:
+        logger.info(f"Environment data shape: {env_data.shape} (3D: samples × timesteps × features)")
+    else:
+        logger.info(f"Environment data shape: {env_data.shape} (2D: samples × features)")
     
     # 3. Load phenotype data (target variable)
     logger.info("Loading phenotype data...")
@@ -170,7 +184,9 @@ def load_data(config: dict, data_dir: str, logger: logging.Logger):
     data_info = {
         'n_samples': len(aligned_ids),
         'n_markers': aligned_genetic.shape[1],
-        'n_env_features': aligned_env.shape[1],
+        'n_env_features': aligned_env.shape[-1],  # Last dim is features (works for 2D and 3D)
+        'n_timesteps': aligned_env.shape[1] if env_is_3d else None,
+        'env_is_3d': env_is_3d,
         'n_traits': aligned_pheno.shape[1],
         'trait_names': trait_names,
         'marker_names': marker_names,
@@ -242,12 +258,38 @@ def build_model(config: dict, data_info: dict, device: str, logger: logging.Logg
         )
     
     # Build environment encoder
-    env_encoder = MLPEncoder(
-        input_dim=n_env_features,
-        hidden_dims=model_config.get('env_hidden_dims', [128, 64]),
-        output_dim=env_hidden_dim,
-        dropout=model_config.get('dropout', 0.1)
-    )
+    env_is_3d = data_info.get('env_is_3d', False)
+    n_timesteps = data_info.get('n_timesteps', None)
+    env_encoder_type = model_config.get('env_encoder', 'mlp')
+    
+    if env_is_3d and n_timesteps is not None:
+        # Use TemporalEncoder for 3D weather time series
+        logger.info(f"Using TemporalEncoder for 3D environment data ({n_timesteps} timesteps)")
+        env_encoder = TemporalEncoder(
+            n_features=n_env_features,
+            n_timesteps=n_timesteps,
+            output_dim=env_hidden_dim,
+            hidden_dim=model_config.get('env_temporal_hidden_dim', 128),
+            n_heads=model_config.get('env_n_heads', 4),
+            n_layers=model_config.get('env_n_layers', 2),
+            dropout=model_config.get('dropout', 0.1)
+        )
+    elif env_encoder_type == 'transformer':
+        # Transformer for 2D environment features
+        env_encoder = TransformerEncoder(
+            input_dim=n_env_features,
+            output_dim=env_hidden_dim,
+            n_heads=model_config.get('env_n_heads', 4),
+            n_layers=model_config.get('env_n_layers', 2),
+            dropout=model_config.get('dropout', 0.1)
+        )
+    else:  # MLP (default for 2D)
+        env_encoder = MLPEncoder(
+            input_dim=n_env_features,
+            hidden_dims=model_config.get('env_hidden_dims', [128, 64]),
+            output_dim=env_hidden_dim,
+            dropout=model_config.get('dropout', 0.1)
+        )
     
     # Build fusion layer
     fusion_type = model_config.get('fusion', 'attention')
@@ -466,6 +508,38 @@ def main(args):
     # Build model
     model = build_model(config, data_info, device, logger)
     
+    # Resume training from checkpoint if specified
+    start_epoch = 1
+    best_val_loss = float('inf')
+    best_val_r2 = -float('inf')
+    history = {'train_loss': [], 'val_loss': [], 'val_r2': [], 'val_rmse': []}
+    
+    if args.resume:
+        resume_path = Path(args.resume)
+        if resume_path.exists():
+            logger.info(f"Resuming training from {resume_path}")
+            checkpoint = torch.load(resume_path, map_location=device, weights_only=False)
+            
+            # Load model weights
+            model.load_state_dict(checkpoint['model_state_dict'])
+            
+            # Get training state
+            start_epoch = checkpoint.get('epoch', 0) + 1
+            best_val_loss = checkpoint.get('val_loss', float('inf'))
+            best_val_r2 = checkpoint.get('val_r2', -float('inf'))
+            
+            # Load history if available (from results.json)
+            results_file = resume_path.parent / "results.json"
+            if results_file.exists():
+                with open(results_file, 'r') as f:
+                    prev_results = json.load(f)
+                    if 'history' in prev_results:
+                        history = prev_results['history']
+            
+            logger.info(f"  Resumed from epoch {start_epoch - 1}, best R²: {best_val_r2:.4f}")
+        else:
+            logger.warning(f"Checkpoint not found: {resume_path}, starting from scratch")
+    
     # Setup training
     #criterion = nn.MSELoss()
     criterion = nn.HuberLoss(delta=1.0)
@@ -488,16 +562,26 @@ def main(args):
     n_epochs = config.get('training', {}).get('epochs', 100)
     early_stopping_patience = config.get('training', {}).get('early_stopping_patience', 15)
     
-    best_val_loss = float('inf')
-    best_val_r2 = -float('inf')
-    patience_counter = 0
-    history = {'train_loss': [], 'val_loss': [], 'val_r2': [], 'val_rmse': []}
+    # Load optimizer state if resuming
+    if args.resume and resume_path.exists():
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        # Move optimizer state to correct device
+        for state in optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(device)
+        logger.info(f"  Optimizer state restored")
     
-    logger.info(f"\nStarting training for {n_epochs} epochs...")
+    patience_counter = 0
+    
+    if args.resume:
+        logger.info(f"\nResuming training from epoch {start_epoch} to {n_epochs}...")
+    else:
+        logger.info(f"\nStarting training for {n_epochs} epochs...")
     logger.info(f"Batch size: {batch_size}, Learning rate: {learning_rate}")
     logger.info("-" * 70)
     
-    for epoch in range(1, n_epochs + 1):
+    for epoch in range(start_epoch, n_epochs + 1):
         # Train
         train_loss = train_epoch(model, train_loader, criterion, optimizer, device, epoch, logger, n_epochs)
         
@@ -646,6 +730,9 @@ Examples:
     
     # Train on GPU
     python train.py --data-dir ./Training_data --device cuda
+    
+    # Resume training from a checkpoint
+    python train.py --config configs/maize_2024.yaml --data-dir ./Training_data --resume outputs/run_xxx/best_model.pt
         """
     )
     
@@ -705,6 +792,13 @@ Examples:
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default="INFO",
         help="Logging level (default: INFO)"
+    )
+    
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Path to checkpoint to resume training from (e.g., outputs/run_xxx/best_model.pt)"
     )
     
     args = parser.parse_args()

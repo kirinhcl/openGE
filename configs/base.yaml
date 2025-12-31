@@ -16,9 +16,15 @@ model:
   genetic_n_filters: 64             # For CNN encoder
   genetic_kernel_sizes: [7, 5, 3]   # For CNN encoder
   
-  # Environment encoder (always MLP)
+  # Environment encoder: 'mlp', 'transformer', or 'temporal' (auto for 3D)
+  env_encoder: "mlp"
   env_hidden_dim: 64                # Output dimension of env encoder
   env_hidden_dims: [128, 64]        # Hidden layers for env MLP
+  
+  # For 3D temporal environment encoder (weather time series)
+  env_temporal_hidden_dim: 128      # Hidden dim for temporal encoder
+  env_n_heads: 4                    # Attention heads for temporal encoder
+  env_n_layers: 2                   # Transformer layers for temporal encoder
   
   # Fusion layer: 'attention' or 'concat'
   fusion: "attention"
@@ -62,6 +68,11 @@ data:
   
   # Normalization method: 'standard' or 'minmax'
   normalization: "standard"
+  
+  # 3D Weather time series data
+  # If true, load weather as 3D (samples × timesteps × features)
+  # If false, use 2D static EC features
+  use_weather_3d: false
 
 # =============================================================================
 # Logging

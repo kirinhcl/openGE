@@ -24,7 +24,7 @@ from tqdm import tqdm
 from openge.core import Config
 from openge.data import GxEDataLoader, Preprocessor, GxEDataset
 from openge.models import (
-    TransformerEncoder, MLPEncoder, CNNEncoder,
+    TransformerEncoder, MLPEncoder, CNNEncoder, TemporalEncoder,
     AttentionFusion, ConcatFusion,
     RegressionHead, GxEModel
 )
@@ -142,12 +142,37 @@ def build_model_from_config(config: dict, data_info: dict, device: str, logger: 
         )
     
     # Build environment encoder
-    env_encoder = MLPEncoder(
-        input_dim=n_env_features,
-        hidden_dims=model_config.get('env_hidden_dims', [128, 64]),
-        output_dim=env_hidden_dim,
-        dropout=model_config.get('dropout', 0.1)
-    )
+    env_is_3d = data_info.get('env_is_3d', False)
+    n_timesteps = data_info.get('n_timesteps', None)
+    env_encoder_type = model_config.get('env_encoder', 'mlp')
+    
+    if env_is_3d and n_timesteps is not None:
+        # Use TemporalEncoder for 3D weather time series
+        logger.info(f"Using TemporalEncoder for 3D environment data ({n_timesteps} timesteps)")
+        env_encoder = TemporalEncoder(
+            n_features=n_env_features,
+            n_timesteps=n_timesteps,
+            output_dim=env_hidden_dim,
+            hidden_dim=model_config.get('env_temporal_hidden_dim', 128),
+            n_heads=model_config.get('env_n_heads', 4),
+            n_layers=model_config.get('env_n_layers', 2),
+            dropout=model_config.get('dropout', 0.1)
+        )
+    elif env_encoder_type == 'transformer':
+        env_encoder = TransformerEncoder(
+            input_dim=n_env_features,
+            output_dim=env_hidden_dim,
+            n_heads=model_config.get('env_n_heads', 4),
+            n_layers=model_config.get('env_n_layers', 2),
+            dropout=model_config.get('dropout', 0.1)
+        )
+    else:  # MLP (default for 2D)
+        env_encoder = MLPEncoder(
+            input_dim=n_env_features,
+            hidden_dims=model_config.get('env_hidden_dims', [128, 64]),
+            output_dim=env_hidden_dim,
+            dropout=model_config.get('dropout', 0.1)
+        )
     
     # Build fusion layer
     fusion_type = model_config.get('fusion', 'attention')
@@ -172,11 +197,18 @@ def build_model_from_config(config: dict, data_info: dict, device: str, logger: 
         hidden_dims=model_config.get('head_hidden_dims', [64])
     )
     
+    # Residual connections
+    use_residual = model_config.get('use_residual', False)
+    
     model = GxEModel(
         genetic_encoder=genetic_encoder,
         env_encoder=env_encoder,
         fusion_layer=fusion_layer,
         prediction_head=head,
+        use_residual=use_residual,
+        genetic_dim=genetic_hidden_dim,
+        env_dim=env_hidden_dim,
+        fused_dim=head_input_dim,
     ).to(device)
     
     return model

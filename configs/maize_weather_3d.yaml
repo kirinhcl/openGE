@@ -1,42 +1,44 @@
-# Maize Crop Configuration (2024)
-# Crop-specific parameters for maize trait prediction
+# Maize Configuration with 3D Weather Time Series
+# Uses temporal weather data for capturing seasonal patterns
 #
-# Usage: python train.py --config configs/maize_2024.yaml --data-dir ./Training_data
+# Usage: python train.py --config configs/maize_weather_3d.yaml --data-dir ./Training_data
 
 crop: "maize"
 year: 2024
 
 # =============================================================================
-# Model Architecture - Optimized for Maize
+# Model Architecture - With Temporal Weather Encoder
 # =============================================================================
 model:
-  # Use MLP for genetic encoder (faster, good for dense SNP data)
+  # Genetic encoder
   genetic_encoder: "mlp"
   genetic_hidden_dim: 256
-  genetic_hidden_dims: [1024, 512, 256]  # Deeper network for large SNP data
+  genetic_hidden_dims: [1024, 512, 256]
   
-  # Environment encoder
-  env_hidden_dim: 128
-  env_hidden_dims: [256, 128]            # Larger for rich EC features
+  # Environment encoder (auto-uses TemporalEncoder for 3D data)
+  env_hidden_dim: 128               # Output dimension
+  env_temporal_hidden_dim: 128      # Hidden dim for temporal conv + attention
+  env_n_heads: 4                    # Attention heads
+  env_n_layers: 2                   # Transformer layers
   
-  # Fusion
+  # Fusion - attention-based G×E interaction
   fusion: "attention"
   
-  # Residual connections: add G and E to GxE
+  # Residual connections
   use_residual: true
   
-  # Head
+  # Prediction head
   head_hidden_dims: [64, 32]
   
-  dropout: 0.5                           # Higher dropout for regularization
+  dropout: 0.15
 
 # =============================================================================
 # Training Configuration
 # =============================================================================
 training:
-  batch_size: 64
+  batch_size: 32                    # Smaller batch for 3D data (more memory)
   epochs: 100
-  learning_rate: 0.0005                  # Lower LR for stability
+  learning_rate: 0.0003
   weight_decay: 0.0001
   early_stopping_patience: 20
   
@@ -47,22 +49,20 @@ training:
 # Data Configuration
 # =============================================================================
 data:
-  # Primary trait: Grain Yield
   target_traits:
     - "Yield_Mg_ha"
   
-  # Can also predict multiple traits:
-  # target_traits:
-  #   - "Yield_Mg_ha"
-  #   - "Plant_Height_cm"
-  #   - "Ear_Height_cm"
-  
   genetic_missing_threshold: 0.5
   normalization: "standard"
+  
+  # Enable 3D weather time series data
+  # Weather data shape: (n_samples, n_timesteps, n_weather_features)
+  # e.g., 366 days × 16 weather variables per day
+  use_weather_3d: true
 
 # =============================================================================
 # Logging
 # =============================================================================
 logging:
   level: "INFO"
-  save_dir: "./outputs/maize_2024"
+  save_dir: "./outputs/maize_weather_3d"
